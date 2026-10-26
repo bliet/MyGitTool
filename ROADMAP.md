@@ -9,7 +9,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [ ] `app` launches an empty Dioxus desktop window with a three-column layout
 - [ ] Open a repo: from the CLI argument, else the current directory, else a folder picker. The recent-repos list is persisted in the user config dir.
 - [ ] CI (GitHub Actions) on Linux, Windows and macOS runs `fmt --check`, `clippy -D warnings` and `test`
-- [ ] `infra-git` test fixture helper (`TestRepo`) for building temp repositories
+- [ ] `infra-git` test fixture helper (`TestRepo`) in `tests/common/` for building temp repositories (tests stay out of `src/`, see CLAUDE.md)
 
 ## M1: Read-only viewer
 

@@ -48,8 +48,19 @@ Run fmt, clippy and the tests before you consider a change done.
 
 ## Testing
 
-- **domain / application:** unit tests, written TDD style. Test use cases against hand-written fake port implementations (in `application/src/testing.rs` or `tests/`). No real repositories.
-- **infra-git:** integration tests against temporary repositories built with a fixture helper (`tempfile` + `git2`), e.g. `TestRepo::new().commit("a.txt", "1").branch("feature")...`. Network operations are tested against a local bare repo used as the remote.
+**Source and tests live in separate places.** `crates/<crate>/src/` holds production code only, and every test goes in `crates/<crate>/tests/`. Source files contain no `#[cfg(test)] mod tests` blocks and no test helpers. Tests use the crate's public API. If something can't be tested that way, the API needs a better shape; don't add test-only visibility.
+
+```
+crates/application/
+├── src/            # production code only
+└── tests/
+    ├── common/mod.rs        # shared fakes and fixtures
+    ├── load_history.rs
+    └── pull.rs
+```
+
+- **domain / application:** unit tests, written TDD style. Test use cases against hand-written fake port implementations in `tests/common/`. No real repositories.
+- **infra-git:** integration tests against temporary repositories built with a fixture helper (`tempfile` + `git2`) in `tests/common/`, e.g. `TestRepo::new().commit("a.txt", "1").branch("feature")...`. Network operations are tested against a local bare repo used as the remote.
 - **ui:** keep the logic out of components (put it in view-model or state structs) so it can be unit-tested. Component tests are optional.
 - CI runs fmt, clippy and the tests on Linux, Windows and macOS.
 
