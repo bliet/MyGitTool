@@ -1,0 +1,13 @@
+[package]
+name = "ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+application.workspace = true
+dioxus.workspace = true
+domain.workspace = true
+rfd.workspace = true
+tokio.workspace = true

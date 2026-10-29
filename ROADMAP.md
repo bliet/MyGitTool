@@ -4,12 +4,12 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 ## M0: Scaffolding
 
-- [ ] Cargo workspace with crates `domain`, `application`, `infra-git`, `ui`, `app`
-- [ ] Shared dependency versions in `[workspace.dependencies]` (dioxus 0.7, git2 with `vendored-libgit2`, similar, notify, tokio, thiserror, anyhow, tempfile)
-- [ ] `app` launches an empty Dioxus desktop window with a three-column layout
-- [ ] Open a repo: from the CLI argument, else the current directory, else a folder picker. The recent-repos list is persisted in the user config dir.
-- [ ] CI (GitHub Actions) on Linux, Windows and macOS runs `fmt --check`, `clippy -D warnings` and `test`
-- [ ] `infra-git` test fixture helper (`TestRepo`) in `tests/common/` for building temp repositories (tests stay out of `src/`, see CLAUDE.md)
+- [x] Cargo workspace with crates `domain`, `application`, `infra-git`, `ui`, `app`
+- [x] Shared dependency versions in `[workspace.dependencies]` (dioxus 0.7, git2 with `vendored-libgit2`, similar, notify, tokio, thiserror, anyhow, tempfile)
+- [x] `app` launches an empty Dioxus desktop window with a three-column layout
+- [x] Open a repo: from the CLI argument, else the current directory, else a folder picker. The recent-repos list is persisted in the user config dir.
+- [x] CI (GitHub Actions) on Linux, Windows and macOS runs `fmt --check`, `clippy -D warnings` and `test`
+- [x] `infra-git` test fixture helper (`TestRepo`) in `tests/common/` for building temp repositories (tests stay out of `src/`, see CLAUDE.md)
 
 ## M1: Read-only viewer
 

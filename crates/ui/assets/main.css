@@ -1,0 +1,166 @@
+:root {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-hover: #e9ecf1;
+  --fg: #1d2129;
+  --fg-muted: #6a7280;
+  --border: #d9dde3;
+  --accent: #2f6fde;
+  --accent-fg: #ffffff;
+  --error-bg: #fdecec;
+  --error-fg: #9b1c1c;
+  --error-border: #f3b8b8;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1d22;
+    --bg-panel: #22252b;
+    --bg-hover: #2d3139;
+    --fg: #e3e6eb;
+    --fg-muted: #9098a5;
+    --border: #353a43;
+    --accent: #5a8ff0;
+    --accent-fg: #ffffff;
+    --error-bg: #3a1f22;
+    --error-fg: #f5b5b5;
+    --error-border: #6b2e33;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body, #main {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover { background: var(--bg-hover); }
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  padding: 8px 16px;
+}
+button.primary:hover { filter: brightness(1.08); }
+button.icon {
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 2px 6px;
+}
+button.icon:hover { background: var(--bg-hover); color: var(--fg); }
+
+h2 {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.muted { color: var(--fg-muted); }
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--error-bg);
+  color: var(--error-fg);
+  border-bottom: 1px solid var(--error-border);
+}
+.error-banner .message { flex: 1; user-select: text; -webkit-user-select: text; }
+
+/* Welcome screen */
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12vh 16px 16px;
+  overflow: auto;
+}
+.welcome h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; }
+.welcome > .muted { margin: 0 0 20px; }
+.recent { width: min(560px, 100%); margin-top: 32px; }
+.recent h2 { border-bottom: none; padding-left: 0; }
+.recent ul { list-style: none; margin: 0; padding: 0; }
+.recent li { display: flex; align-items: center; gap: 4px; }
+.recent-entry {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 8px;
+}
+.recent-entry .name { font-weight: 600; }
+.recent-entry .location,
+.repo-path {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+/* Repository view */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.toolbar .repo-name { font-weight: 600; }
+.toolbar .repo-path { min-width: 0; }
+.toolbar .spacer { flex: 1; }
+
+.columns {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 260px minmax(300px, 1fr) 360px;
+}
+.column {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+}
+.column:last-child { border-right: none; }
+.column.branches, .column.details { background: var(--bg-panel); }
+.placeholder { padding: 12px; color: var(--fg-muted); margin: 0; }

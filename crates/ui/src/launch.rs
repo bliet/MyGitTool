@@ -1,0 +1,32 @@
+use crate::components::App;
+use crate::state::AppState;
+use application::{OpenRepository, RecentRepositories, Startup};
+use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+
+const STYLE: &str = include_str!("../assets/main.css");
+
+/// The use cases the UI needs, built by the composition root.
+#[derive(Clone)]
+pub struct Services {
+    pub open_repository: OpenRepository,
+    pub recent_repositories: RecentRepositories,
+}
+
+/// Opens the main window and runs the UI until it is closed.
+pub fn launch(services: Services, startup: Startup) {
+    let state = AppState::from_startup(startup);
+    let window = WindowBuilder::new()
+        .with_title(state.window_title())
+        .with_inner_size(LogicalSize::new(1400.0, 900.0))
+        .with_min_inner_size(LogicalSize::new(800.0, 500.0));
+    let config = Config::new()
+        .with_window(window)
+        .with_menu(None)
+        .with_custom_head(format!("<style>{STYLE}</style>"));
+
+    dioxus::LaunchBuilder::desktop()
+        .with_cfg(config)
+        .with_context(services)
+        .with_context(state)
+        .launch(App);
+}

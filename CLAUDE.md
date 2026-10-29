@@ -14,14 +14,15 @@ Dependencies point **inward only**:
 app (binary, composition root)
  ├── ui          (Dioxus)        ─┐
  ├── infra-git   (git2, notify)  ─┼──> application ──> domain
- └── ...                          ─┘
+ └── infra-config (config files) ─┘
 ```
 
 | Crate | Responsibility | May depend on |
 |---|---|---|
 | `crates/domain` | Pure types and rules: `Commit`, `CommitId`, `Branch` (local/remote), `Remote`, `Signature`, `FileChange`, `ChangeKind`, `DiffHunk`, `GraphLane`, the domain errors | `std` and small pure crates only (e.g. `thiserror`). **No I/O.** |
-| `crates/application` | Use cases (`LoadBranches`, `LoadHistory`, `GetCommitDetails`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`), **port traits** (`RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
+| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
 | `crates/infra-git` | Adapters that implement the ports with `git2` (and `notify` for the watcher) | `application`, `domain`, `git2`, `notify` |
+| `crates/infra-config` | Adapters for app state in the user config dir (e.g. the recent-repositories list as JSON) | `application`, `serde`, `directories` |
 | `crates/ui` | Dioxus components and view state. Calls use cases only, never git2. | `application`, `domain`, `dioxus` |
 | `crates/app` | `main`. Parses the CLI argument, builds the adapters, injects them into the use cases and launches the UI. | everything |
 
@@ -38,7 +39,7 @@ Hard rules:
 
 ```sh
 cargo build                                  # build all crates
-cargo run -p app -- <repo-path>              # run the app
+cargo run -p app -- <repo-path>              # run the app (binary: mygittool)
 cargo test --workspace                       # all tests
 cargo fmt --all --check                      # formatting (CI enforced)
 cargo clippy --workspace --all-targets -- -D warnings   # lints (CI enforced)

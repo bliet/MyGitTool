@@ -2,7 +2,7 @@
 
 A fast, cross-platform desktop Git client written in Rust that shows a repository, its branches and its remotes at a glance.
 
-> **Status:** early development. Nothing works yet. See [ROADMAP.md](ROADMAP.md) for what's planned and what's done.
+> **Status:** early development. The app opens a repository and shows an empty three-column window; nothing is displayed in it yet. See [ROADMAP.md](ROADMAP.md) for what's planned and what's done.
 
 > [!WARNING]
 > **This tool is developed by AI.** The code, tests and documentation are written by [Claude Code](https://claude.com/claude-code). Use it at your own risk, especially for operations that modify your repository (pull, push, merge, rebase, delete branch).
