@@ -13,19 +13,19 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 ## M1: Read-only viewer
 
-- [ ] Domain types: `CommitId`, `Commit`, `Signature`, `Branch` (local/remote, upstream, ahead/behind), `Remote`, `Tag`, `FileChange`, `ChangeKind` (added, modified, deleted, renamed, type-changed)
-- [ ] Ports `RepositoryReader` plus the git2 adapter
-- [ ] **Left column:** tree of the local branches (grouped by `/` prefix) and the remotes, each with its branches. The current branch is highlighted, and ahead/behind counts are shown.
-- [ ] **Middle column:** history across all refs in topological order. Each row shows the one-line message, author, short hash, date and ref badges.
-- [ ] Lazy, paged loading and a virtualized list for large repositories
-- [ ] Commit graph lanes (layout computed in `application`, drawn in `ui`)
-- [ ] An "Uncommitted changes" row at the top when the work tree is dirty
-- [ ] Double-clicking a branch filters the history to that branch. A filter chip with ✕ (or `Esc`) clears it.
-- [ ] Selecting a branch on the left scrolls the history to the branch's tip
-- [ ] **Right column:** details of the selected commit: full and short hash (copyable), parents (clickable), author and committer with dates, full message, refs, and the changed files with A/M/D/R status and +/- line counts
-- [ ] Toggle between a tree and a flat list of changed files
-- [ ] Resizable columns
-- [ ] `F5` and a refresh button
+- [x] Domain types: `CommitId`, `Commit`, `Signature`, `Branch` (local/remote, upstream, ahead/behind), `Remote`, `Tag`, `FileChange`, `ChangeKind` (added, modified, deleted, renamed, type-changed)
+- [x] Ports `RepositoryReader` plus the git2 adapter
+- [x] **Left column:** tree of the local branches (grouped by `/` prefix) and the remotes, each with its branches. The current branch is highlighted, and ahead/behind counts are shown.
+- [x] **Middle column:** history across all refs in topological order. Each row shows the one-line message, author, short hash, date and ref badges.
+- [x] Lazy, paged loading and a virtualized list for large repositories
+- [x] Commit graph lanes (layout computed in `application`, drawn in `ui`)
+- [x] An "Uncommitted changes" row at the top when the work tree is dirty
+- [x] Double-clicking a branch filters the history to that branch. A filter chip with ✕ (or `Esc`) clears it.
+- [x] Selecting a branch on the left scrolls the history to the branch's tip
+- [x] **Right column:** details of the selected commit: full and short hash (copyable), parents (clickable), author and committer with dates, full message, refs, and the changed files with A/M/D/R status and +/- line counts
+- [x] Toggle between a tree and a flat list of changed files
+- [x] Resizable columns
+- [x] `F5` and a refresh button
 
 ## M2: Diff window
 

@@ -2,9 +2,12 @@
 //! them into the use cases and launches the UI.
 
 use anyhow::Context;
-use application::{OpenRepository, RecentRepositories};
+use application::{
+    GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges, OpenRepository,
+    RecentRepositories,
+};
 use infra_config::JsonRecentRepositoriesStore;
-use infra_git::GitRepositoryLocator;
+use infra_git::{GitRepositoryLocator, GitRepositoryReader};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -38,6 +41,8 @@ fn main() -> anyhow::Result<ExitCode> {
         JsonRecentRepositoriesStore::in_config_dir(&config_dir),
     ));
 
+    let reader = Arc::new(GitRepositoryReader);
+
     let current_dir = std::env::current_dir().ok();
     let startup = open_repository.resolve_startup(requested.as_deref(), current_dir.as_deref());
 
@@ -45,6 +50,10 @@ fn main() -> anyhow::Result<ExitCode> {
         ui::Services {
             open_repository,
             recent_repositories,
+            load_branches: LoadBranches::new(reader.clone()),
+            load_history: LoadHistory::new(reader.clone()),
+            get_commit_details: GetCommitDetails::new(reader.clone()),
+            load_work_tree_changes: LoadWorkTreeChanges::new(reader),
         },
         startup,
     );

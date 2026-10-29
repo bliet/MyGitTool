@@ -1,5 +1,9 @@
+mod branches;
+mod details;
 mod error_banner;
+mod history;
 mod repository_view;
+mod session;
 mod welcome;
 
 use crate::launch::Services;
@@ -74,6 +78,8 @@ pub fn App() -> Element {
                 },
                 Screen::Repository(repo) => rsx! {
                     RepositoryView {
+                        // A new key per repository gives every repository a fresh session.
+                        key: "{repo.root().display()}",
                         repo,
                         on_pick: pick,
                         on_close: move |()| state.write().close_repository(),
@@ -111,7 +117,7 @@ fn apply_recent(
 }
 
 /// Runs a synchronous use case off the UI thread.
-async fn blocking<T, F>(task: F) -> Result<T, String>
+pub(crate) async fn blocking<T, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,

@@ -4,5 +4,8 @@
 //! the adapter boundary.
 
 mod locator;
+mod map;
+mod reader;
 
 pub use locator::GitRepositoryLocator;
+pub use reader::GitRepositoryReader;

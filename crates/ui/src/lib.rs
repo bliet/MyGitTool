@@ -6,6 +6,7 @@
 mod components;
 mod launch;
 mod state;
+pub mod view;
 
 pub use launch::{Services, launch};
 pub use state::{AppState, RecentEntry, Screen};

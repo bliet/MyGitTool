@@ -1,6 +1,9 @@
 use crate::components::App;
 use crate::state::AppState;
-use application::{OpenRepository, RecentRepositories, Startup};
+use application::{
+    GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges, OpenRepository,
+    RecentRepositories, Startup,
+};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 
 const STYLE: &str = include_str!("../assets/main.css");
@@ -10,6 +13,10 @@ const STYLE: &str = include_str!("../assets/main.css");
 pub struct Services {
     pub open_repository: OpenRepository,
     pub recent_repositories: RecentRepositories,
+    pub load_branches: LoadBranches,
+    pub load_history: LoadHistory,
+    pub get_commit_details: GetCommitDetails,
+    pub load_work_tree_changes: LoadWorkTreeChanges,
 }
 
 /// Opens the main window and runs the UI until it is closed.

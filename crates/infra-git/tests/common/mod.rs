@@ -10,7 +10,9 @@
 //! ```
 #![allow(dead_code)]
 
-use git2::{BranchType, IndexAddOption, Oid, Repository, RepositoryInitOptions, Signature, Time};
+use git2::{
+    BranchType, IndexAddOption, ObjectType, Oid, Repository, RepositoryInitOptions, Signature, Time,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -88,8 +90,24 @@ impl TestRepo {
     }
 
     /// Writes `file`, stages everything and commits with `message`.
-    pub fn commit_with_message(mut self, file: &str, content: &str, message: &str) -> Self {
-        self = self.write(file, content);
+    pub fn commit_with_message(self, file: &str, content: &str, message: &str) -> Self {
+        self.write(file, content).commit_all(message)
+    }
+
+    /// Deletes `file` from the work tree without staging it.
+    pub fn delete(self, file: &str) -> Self {
+        fs::remove_file(self.work_path(file)).expect("delete file");
+        self
+    }
+
+    /// Renames `from` to `to` in the work tree without staging it.
+    pub fn rename(self, from: &str, to: &str) -> Self {
+        fs::rename(self.work_path(from), self.work_path(to)).expect("rename file");
+        self
+    }
+
+    /// Stages all work tree changes (including deletions) and commits them.
+    pub fn commit_all(mut self, message: &str) -> Self {
         let signature = self.next_signature();
         {
             let repo = &self.repo;
@@ -97,6 +115,7 @@ impl TestRepo {
             index
                 .add_all(["*"], IndexAddOption::DEFAULT, None)
                 .expect("stage files");
+            index.update_all(["*"], None).expect("stage deletions");
             index.write().expect("write index");
             let tree = repo
                 .find_tree(index.write_tree().expect("write tree"))
@@ -113,6 +132,110 @@ impl TestRepo {
             )
             .expect("commit");
         }
+        self
+    }
+
+    /// Creates a merge commit of HEAD and the local branch `other`. The tree
+    /// is HEAD's, which is all the history tests need.
+    pub fn merge(mut self, other: &str, message: &str) -> Self {
+        let signature = self.next_signature();
+        {
+            let repo = &self.repo;
+            let head = repo
+                .head()
+                .expect("HEAD")
+                .peel_to_commit()
+                .expect("HEAD commit");
+            let other = repo
+                .find_branch(other, BranchType::Local)
+                .expect("find branch")
+                .get()
+                .peel_to_commit()
+                .expect("branch commit");
+            let tree = head.tree().expect("HEAD tree");
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                message,
+                &tree,
+                &[&head, &other],
+            )
+            .expect("merge commit");
+        }
+        self
+    }
+
+    /// A lightweight tag at HEAD.
+    pub fn tag(self, name: &str) -> Self {
+        {
+            let head = self
+                .repo
+                .head()
+                .expect("HEAD")
+                .peel(ObjectType::Commit)
+                .expect("HEAD commit");
+            self.repo
+                .tag_lightweight(name, &head, false)
+                .expect("create tag");
+        }
+        self
+    }
+
+    /// An annotated tag at HEAD.
+    pub fn annotated_tag(mut self, name: &str) -> Self {
+        let signature = self.next_signature();
+        {
+            let head = self
+                .repo
+                .head()
+                .expect("HEAD")
+                .peel(ObjectType::Commit)
+                .expect("HEAD commit");
+            self.repo
+                .tag(name, &head, &signature, "annotated", false)
+                .expect("create tag");
+        }
+        self
+    }
+
+    /// Configures a remote without fetching from it.
+    pub fn remote(self, name: &str, url: &str) -> Self {
+        self.repo.remote(name, url).expect("add remote");
+        self
+    }
+
+    /// Creates the remote-tracking ref `refs/remotes/<remote>/<branch>` at
+    /// HEAD, as if it had been fetched.
+    pub fn remote_branch(self, remote: &str, branch: &str) -> Self {
+        let head = self.head();
+        self.repo
+            .reference(
+                &format!("refs/remotes/{remote}/{branch}"),
+                head,
+                true,
+                "test",
+            )
+            .expect("create remote ref");
+        self
+    }
+
+    /// Sets the upstream of `local` to `upstream`, e.g. `origin/main`.
+    pub fn set_upstream(self, local: &str, upstream: &str) -> Self {
+        {
+            let mut branch = self
+                .repo
+                .find_branch(local, BranchType::Local)
+                .expect("find branch");
+            branch.set_upstream(Some(upstream)).expect("set upstream");
+        }
+        self
+    }
+
+    /// Detaches HEAD at its current commit.
+    pub fn detach(self) -> Self {
+        let head = self.head();
+        self.repo.set_head_detached(head).expect("detach HEAD");
         self
     }
 

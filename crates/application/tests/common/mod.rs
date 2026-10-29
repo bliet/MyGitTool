@@ -86,3 +86,128 @@ impl RecentRepositoriesStore for FakeStore {
         Ok(())
     }
 }
+
+/// Builds a `CommitId` from a small number, for readable tests.
+pub fn id(n: u8) -> domain::CommitId {
+    domain::CommitId::from_bytes([n; 20])
+}
+
+pub fn commit(n: u8, parents: &[u8]) -> domain::Commit {
+    domain::Commit {
+        id: id(n),
+        parents: parents.iter().map(|&p| id(p)).collect(),
+        author: domain::Signature {
+            name: "Ann".into(),
+            email: "ann@example.com".into(),
+            time: domain::Timestamp {
+                seconds: 1_700_000_000 + i64::from(n),
+                offset_minutes: 0,
+            },
+        },
+        summary: format!("commit {n}"),
+    }
+}
+
+pub fn local(name: &str, target: u8, is_head: bool) -> domain::Branch {
+    domain::Branch {
+        name: name.into(),
+        refname: format!("refs/heads/{name}"),
+        target: id(target),
+        kind: domain::BranchKind::Local {
+            is_head,
+            upstream: None,
+        },
+    }
+}
+
+pub fn remote_branch(remote: &str, name: &str, target: u8) -> domain::Branch {
+    domain::Branch {
+        name: format!("{remote}/{name}"),
+        refname: format!("refs/remotes/{remote}/{name}"),
+        target: id(target),
+        kind: domain::BranchKind::Remote {
+            remote: remote.into(),
+        },
+    }
+}
+
+/// A reader over fixed data. `history` serves `commits` for every scope.
+pub struct FakeReader {
+    pub head: domain::Head,
+    pub branches: Vec<domain::Branch>,
+    pub remotes: Vec<domain::Remote>,
+    pub tags: Vec<domain::Tag>,
+    pub commits: Vec<domain::Commit>,
+    pub work_tree: Vec<domain::FileChange>,
+    pub scopes: Mutex<Vec<application::HistoryScope>>,
+}
+
+impl Default for FakeReader {
+    fn default() -> Self {
+        Self {
+            head: domain::Head::Unborn {
+                name: "main".into(),
+            },
+            branches: Vec::new(),
+            remotes: Vec::new(),
+            tags: Vec::new(),
+            commits: Vec::new(),
+            work_tree: Vec::new(),
+            scopes: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+struct FakeCursor {
+    commits: std::vec::IntoIter<domain::Commit>,
+}
+
+impl application::HistoryCursor for FakeCursor {
+    fn next_page(&mut self, max: usize) -> Result<Vec<domain::Commit>, application::ReadError> {
+        Ok(self.commits.by_ref().take(max).collect())
+    }
+}
+
+impl application::RepositoryReader for FakeReader {
+    fn head(&self, _: &RepositoryInfo) -> Result<domain::Head, application::ReadError> {
+        Ok(self.head.clone())
+    }
+
+    fn branches(&self, _: &RepositoryInfo) -> Result<Vec<domain::Branch>, application::ReadError> {
+        Ok(self.branches.clone())
+    }
+
+    fn remotes(&self, _: &RepositoryInfo) -> Result<Vec<domain::Remote>, application::ReadError> {
+        Ok(self.remotes.clone())
+    }
+
+    fn tags(&self, _: &RepositoryInfo) -> Result<Vec<domain::Tag>, application::ReadError> {
+        Ok(self.tags.clone())
+    }
+
+    fn history(
+        &self,
+        _: &RepositoryInfo,
+        scope: &application::HistoryScope,
+    ) -> Result<Box<dyn application::HistoryCursor>, application::ReadError> {
+        self.scopes.lock().unwrap().push(scope.clone());
+        Ok(Box::new(FakeCursor {
+            commits: self.commits.clone().into_iter(),
+        }))
+    }
+
+    fn commit_details(
+        &self,
+        _: &RepositoryInfo,
+        id: domain::CommitId,
+    ) -> Result<domain::CommitDetails, application::ReadError> {
+        Err(application::ReadError::CommitNotFound(id))
+    }
+
+    fn work_tree_changes(
+        &self,
+        _: &RepositoryInfo,
+    ) -> Result<Vec<domain::FileChange>, application::ReadError> {
+        Ok(self.work_tree.clone())
+    }
+}

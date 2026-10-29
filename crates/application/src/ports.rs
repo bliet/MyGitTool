@@ -1,4 +1,6 @@
-use domain::RepositoryInfo;
+use domain::{
+    Branch, Commit, CommitDetails, CommitId, FileChange, Head, Remote, RepositoryInfo, Tag,
+};
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -45,4 +47,54 @@ impl StorageError {
             source: source.into(),
         }
     }
+}
+
+/// Which commits a history walk covers.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum HistoryScope {
+    /// HEAD and every branch and tag.
+    All,
+    /// Only the commits reachable from this ref, e.g. `refs/heads/main`.
+    Ref(String),
+}
+
+/// Reads repository data. Every call opens the repository at `repo`, so one
+/// reader serves any number of repositories.
+pub trait RepositoryReader: Send + Sync {
+    fn head(&self, repo: &RepositoryInfo) -> Result<Head, ReadError>;
+    /// Local and remote branches. Symbolic refs like `origin/HEAD` are left out.
+    fn branches(&self, repo: &RepositoryInfo) -> Result<Vec<Branch>, ReadError>;
+    fn remotes(&self, repo: &RepositoryInfo) -> Result<Vec<Remote>, ReadError>;
+    fn tags(&self, repo: &RepositoryInfo) -> Result<Vec<Tag>, ReadError>;
+    /// Starts a walk over the commits in `scope`, in topological order
+    /// (children before parents) with newer commits first where possible.
+    fn history(
+        &self,
+        repo: &RepositoryInfo,
+        scope: &HistoryScope,
+    ) -> Result<Box<dyn HistoryCursor>, ReadError>;
+    fn commit_details(
+        &self,
+        repo: &RepositoryInfo,
+        id: CommitId,
+    ) -> Result<CommitDetails, ReadError>;
+    /// Staged, unstaged and untracked changes against HEAD. Empty if the
+    /// work tree is clean or the repository is bare.
+    fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<Vec<FileChange>, ReadError>;
+}
+
+/// A history walk that hands out commits page by page.
+pub trait HistoryCursor: Send {
+    /// Returns up to `max` further commits. Fewer than `max` means the walk is done.
+    fn next_page(&mut self, max: usize) -> Result<Vec<Commit>, ReadError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ReadError {
+    #[error("commit {0} not found")]
+    CommitNotFound(CommitId),
+    #[error("ref {0} not found")]
+    RefNotFound(String),
+    #[error("{0}")]
+    Backend(String),
 }
