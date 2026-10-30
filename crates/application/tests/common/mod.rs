@@ -3,6 +3,7 @@
 
 use application::{LocateError, RecentRepositoriesStore, RepositoryLocator, StorageError};
 use domain::RepositoryInfo;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -132,6 +133,8 @@ pub fn remote_branch(remote: &str, name: &str, target: u8) -> domain::Branch {
 }
 
 /// A reader over fixed data. `history` serves `commits` for every scope.
+/// `files` holds the file contents by revision and path; a file larger than
+/// the requested limit is served as `TooLarge`.
 pub struct FakeReader {
     pub head: domain::Head,
     pub branches: Vec<domain::Branch>,
@@ -139,7 +142,22 @@ pub struct FakeReader {
     pub tags: Vec<domain::Tag>,
     pub commits: Vec<domain::Commit>,
     pub work_tree: Vec<domain::FileChange>,
+    pub files: HashMap<(domain::Revision, String), Vec<u8>>,
     pub scopes: Mutex<Vec<application::HistoryScope>>,
+    /// Every `file_content` call as (revision, path).
+    pub reads: Mutex<Vec<(domain::Revision, String)>>,
+}
+
+impl FakeReader {
+    pub fn with_file(mut self, revision: domain::Revision, path: &str, content: &str) -> Self {
+        self.files
+            .insert((revision, path.to_owned()), content.as_bytes().to_vec());
+        self
+    }
+
+    pub fn reads(&self) -> Vec<(domain::Revision, String)> {
+        self.reads.lock().unwrap().clone()
+    }
 }
 
 impl Default for FakeReader {
@@ -153,7 +171,9 @@ impl Default for FakeReader {
             tags: Vec::new(),
             commits: Vec::new(),
             work_tree: Vec::new(),
+            files: HashMap::new(),
             scopes: Mutex::new(Vec::new()),
+            reads: Mutex::new(Vec::new()),
         }
     }
 }
@@ -209,5 +229,22 @@ impl application::RepositoryReader for FakeReader {
         _: &RepositoryInfo,
     ) -> Result<Vec<domain::FileChange>, application::ReadError> {
         Ok(self.work_tree.clone())
+    }
+
+    fn file_content(
+        &self,
+        _: &RepositoryInfo,
+        revision: domain::Revision,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<domain::FileContent>, application::ReadError> {
+        self.reads.lock().unwrap().push((revision, path.to_owned()));
+        Ok(self
+            .files
+            .get(&(revision, path.to_owned()))
+            .map(|bytes| match bytes.len() as u64 {
+                size if size > limit => domain::FileContent::TooLarge { size },
+                _ => domain::FileContent::Bytes(bytes.clone()),
+            }))
     }
 }

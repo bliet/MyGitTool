@@ -1,10 +1,12 @@
+use super::diff_window::DiffWindows;
 use super::session::{DetailsState, Session};
+use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::file_tree::{FileViewMode, file_rows};
 use crate::view::format::full_date;
 use application::RefLabelKind;
 use dioxus::prelude::*;
-use domain::{CommitDetails, FileChange, Signature};
+use domain::{CommitDetails, DiffSource, FileChange, Signature};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -52,7 +54,7 @@ pub fn DetailsColumn() -> Element {
                 DetailsState::Uncommitted => rsx! {
                     div { class: "details-body",
                         h3 { class: "subject", "Uncommitted changes" }
-                        ChangedFiles { changes: work_tree }
+                        ChangedFiles { changes: work_tree, source: DiffSource::WorkTree }
                     }
                 },
                 DetailsState::Commit(details) => rsx! {
@@ -134,7 +136,13 @@ fn CommitView(details: CommitDetails) -> Element {
                     }
                 }
             }
-            ChangedFiles { changes: details.changes.clone() }
+            ChangedFiles {
+                changes: details.changes.clone(),
+                source: DiffSource::Commit {
+                    id,
+                    parent: commit.parents.first().copied(),
+                },
+            }
         }
     }
 }
@@ -168,8 +176,18 @@ fn CopyButton(text: String, label: &'static str) -> Element {
 }
 
 #[component]
-fn ChangedFiles(changes: Vec<FileChange>) -> Element {
+fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
     let session = use_context::<Session>();
+    let services = use_context::<Services>();
+    let windows = use_context::<DiffWindows>();
+    let open_diff = move |change: FileChange| {
+        windows.open(
+            services.compute_file_diff.clone(),
+            session.repo.peek().clone(),
+            source,
+            change,
+        );
+    };
     let mut mode = session.file_mode;
     let current = *mode.read();
     let rows = file_rows(&changes, current);
@@ -212,7 +230,12 @@ fn ChangedFiles(changes: Vec<FileChange>) -> Element {
                         li {
                             class: "file",
                             style: "padding-left: {indent}px;",
-                            title: "{change.path}",
+                            title: "{change.path} — double-click to show the diff",
+                            ondoubleclick: {
+                                let change = change.clone();
+                                let open_diff = open_diff.clone();
+                                move |_| open_diff(change.clone())
+                            },
                             span { class: "status s{change.kind.letter()}", {change.kind.letter().to_string()} }
                             span { class: "path",
                                 if let Some(old) = &change.old_path {

@@ -3,6 +3,7 @@
 
 pub mod branch_tree;
 pub mod columns;
+pub mod diff;
 pub mod file_tree;
 pub mod format;
 pub mod history;

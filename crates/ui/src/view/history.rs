@@ -22,9 +22,19 @@ pub enum Selection {
 
 /// The rows rendered for a scroll position, including the overscan.
 pub fn visible_range(scroll_top: f64, viewport_height: f64, total: usize) -> Range<usize> {
+    visible_rows(ROW_HEIGHT, scroll_top, viewport_height, total)
+}
+
+/// Like [`visible_range`], for a list with rows of `row_height` pixels.
+pub fn visible_rows(
+    row_height: f64,
+    scroll_top: f64,
+    viewport_height: f64,
+    total: usize,
+) -> Range<usize> {
     // Float-to-int casts saturate; negative values become 0.
-    let first = (scroll_top / ROW_HEIGHT).floor().max(0.0) as usize;
-    let last = ((scroll_top + viewport_height) / ROW_HEIGHT)
+    let first = (scroll_top / row_height).floor().max(0.0) as usize;
+    let last = ((scroll_top + viewport_height) / row_height)
         .ceil()
         .max(0.0) as usize;
     let start = first.saturating_sub(OVERSCAN).min(total);

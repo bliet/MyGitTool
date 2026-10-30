@@ -1,5 +1,6 @@
 use domain::{
-    Branch, Commit, CommitDetails, CommitId, FileChange, Head, Remote, RepositoryInfo, Tag,
+    Branch, Commit, CommitDetails, CommitId, FileChange, FileContent, Head, Remote, RepositoryInfo,
+    Revision, Tag,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -81,6 +82,15 @@ pub trait RepositoryReader: Send + Sync {
     /// Staged, unstaged and untracked changes against HEAD. Empty if the
     /// work tree is clean or the repository is bare.
     fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<Vec<FileChange>, ReadError>;
+    /// The content of the file at `path` in `revision`, or `None` if there is
+    /// no file at that path. A file larger than `limit` bytes is not loaded.
+    fn file_content(
+        &self,
+        repo: &RepositoryInfo,
+        revision: Revision,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<FileContent>, ReadError>;
 }
 
 /// A history walk that hands out commits page by page.

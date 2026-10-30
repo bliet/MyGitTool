@@ -3,8 +3,8 @@
 
 use anyhow::Context;
 use application::{
-    GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges, OpenRepository,
-    RecentRepositories,
+    ComputeFileDiff, GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges,
+    OpenRepository, RecentRepositories,
 };
 use infra_config::JsonRecentRepositoriesStore;
 use infra_git::{GitRepositoryLocator, GitRepositoryReader};
@@ -53,7 +53,8 @@ fn main() -> anyhow::Result<ExitCode> {
             load_branches: LoadBranches::new(reader.clone()),
             load_history: LoadHistory::new(reader.clone()),
             get_commit_details: GetCommitDetails::new(reader.clone()),
-            load_work_tree_changes: LoadWorkTreeChanges::new(reader),
+            load_work_tree_changes: LoadWorkTreeChanges::new(reader.clone()),
+            compute_file_diff: ComputeFileDiff::new(reader),
         },
         startup,
     );

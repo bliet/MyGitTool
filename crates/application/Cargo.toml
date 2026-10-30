@@ -7,4 +7,5 @@ publish.workspace = true
 
 [dependencies]
 domain.workspace = true
+similar.workspace = true
 thiserror.workspace = true

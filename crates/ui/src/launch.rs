@@ -1,12 +1,12 @@
 use crate::components::App;
 use crate::state::AppState;
 use application::{
-    GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges, OpenRepository,
-    RecentRepositories, Startup,
+    ComputeFileDiff, GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges,
+    OpenRepository, RecentRepositories, Startup,
 };
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 
-const STYLE: &str = include_str!("../assets/main.css");
+pub(crate) const STYLE: &str = include_str!("../assets/main.css");
 
 /// The use cases the UI needs, built by the composition root.
 #[derive(Clone)]
@@ -17,6 +17,7 @@ pub struct Services {
     pub load_history: LoadHistory,
     pub get_commit_details: GetCommitDetails,
     pub load_work_tree_changes: LoadWorkTreeChanges,
+    pub compute_file_diff: ComputeFileDiff,
 }
 
 /// Opens the main window and runs the UI until it is closed.

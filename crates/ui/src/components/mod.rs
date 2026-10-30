@@ -1,5 +1,6 @@
 mod branches;
 mod details;
+mod diff_window;
 mod error_banner;
 mod history;
 mod repository_view;
@@ -9,6 +10,7 @@ mod welcome;
 use crate::launch::Services;
 use crate::state::{AppState, Screen};
 use application::StorageError;
+use diff_window::DiffWindows;
 use dioxus::prelude::*;
 use error_banner::ErrorBanner;
 use repository_view::RepositoryView;
@@ -20,6 +22,8 @@ pub fn App() -> Element {
     let services = use_context::<Services>();
     let initial = use_context::<AppState>();
     let mut state = use_context_provider(|| Signal::new(initial));
+    let diff_windows = use_context_provider(DiffWindows::default);
+    use_drop(move || diff_windows.close_all());
 
     // Load the recent list once. A repository opened at startup is recorded
     // first, which also returns the updated list.

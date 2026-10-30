@@ -1,13 +1,16 @@
 use crate::map;
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
-    Branch, BranchKind, Commit, CommitDetails, CommitId, FileChange, Head, Remote, RepositoryInfo,
-    Tag, Upstream,
+    Branch, BranchKind, Commit, CommitDetails, CommitId, FileChange, FileContent, Head, Remote,
+    RepositoryInfo, Revision, Tag, Upstream,
 };
 use git2::{
-    BranchType, Diff, DiffFindOptions, DiffOptions, ErrorCode, Oid, Patch, ReferenceType,
-    Repository, Sort,
+    BranchType, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
+    ReferenceType, Repository, Sort, Tree,
 };
+use std::fs;
+use std::io;
+use std::path::Path;
 
 /// Reads repositories with git2. It is stateless: each call opens the
 /// repository again, which keeps it `Sync` and always up to date.
@@ -180,6 +183,106 @@ impl RepositoryReader for GitRepositoryReader {
             .map_err(map::error)?;
         changes(&mut diff)
     }
+
+    fn file_content(
+        &self,
+        repo: &RepositoryInfo,
+        revision: Revision,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<FileContent>, ReadError> {
+        let git = open(repo)?;
+        let tree = match revision {
+            Revision::WorkTree => return work_tree_content(&git, path, limit),
+            Revision::Head => match git.head() {
+                Ok(head) => head.peel_to_tree().map_err(map::error)?,
+                Err(err) if err.code() == ErrorCode::UnbornBranch => return Ok(None),
+                Err(err) => return Err(map::error(err)),
+            },
+            Revision::Commit(id) => git
+                .find_commit(map::oid(id))
+                .map_err(|err| match err.code() {
+                    ErrorCode::NotFound => ReadError::CommitNotFound(id),
+                    _ => map::error(err),
+                })?
+                .tree()
+                .map_err(map::error)?,
+        };
+        tree_content(&git, &tree, path, limit)
+    }
+}
+
+/// The content of a file in a tree, as Git stores it: a symlink is its
+/// target path, a submodule the commit it points to.
+fn tree_content(
+    git: &Repository,
+    tree: &Tree<'_>,
+    path: &str,
+    limit: u64,
+) -> Result<Option<FileContent>, ReadError> {
+    let entry = match tree.get_path(Path::new(path)) {
+        Ok(entry) => entry,
+        Err(err) if err.code() == ErrorCode::NotFound => return Ok(None),
+        Err(err) => return Err(map::error(err)),
+    };
+    match entry.kind() {
+        Some(ObjectType::Blob) => {
+            let odb = git.odb().map_err(map::error)?;
+            let (size, _) = odb.read_header(entry.id()).map_err(map::error)?;
+            let size = size as u64;
+            if size > limit {
+                return Ok(Some(FileContent::TooLarge { size }));
+            }
+            let blob = git.find_blob(entry.id()).map_err(map::error)?;
+            Ok(Some(FileContent::Bytes(blob.content().to_vec())))
+        }
+        Some(ObjectType::Commit) => Ok(Some(submodule(entry.id()))),
+        // A directory is no file, e.g. after a file was replaced by one.
+        _ => Ok(None),
+    }
+}
+
+/// The content of a file in the work tree, read the way Git would store it.
+fn work_tree_content(
+    git: &Repository,
+    path: &str,
+    limit: u64,
+) -> Result<Option<FileContent>, ReadError> {
+    let Some(workdir) = git.workdir() else {
+        return Ok(None);
+    };
+    let full = workdir.join(path);
+    let io_error = |err: io::Error| ReadError::Backend(format!("{path}: {err}"));
+    let metadata = match fs::symlink_metadata(&full) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(io_error(err)),
+    };
+    if metadata.is_symlink() {
+        let target = fs::read_link(&full).map_err(io_error)?;
+        let target = target.to_string_lossy().replace('\\', "/");
+        return Ok(Some(FileContent::Bytes(target.into_bytes())));
+    }
+    if metadata.is_dir() {
+        // A checked-out submodule; anything else is not a file.
+        return Ok(Repository::open(&full)
+            .ok()
+            .and_then(|sub| sub.head().ok()?.target())
+            .map(submodule));
+    }
+    if metadata.len() > limit {
+        return Ok(Some(FileContent::TooLarge {
+            size: metadata.len(),
+        }));
+    }
+    fs::read(&full)
+        .map(|bytes| Some(FileContent::Bytes(bytes)))
+        .map_err(io_error)
+}
+
+/// A submodule as `git diff` shows it.
+fn submodule(commit: Oid) -> FileContent {
+    FileContent::Bytes(format!("Subproject commit {commit}\n").into_bytes())
 }
 
 /// The upstream of a local branch, including one whose ref is gone.
