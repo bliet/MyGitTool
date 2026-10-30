@@ -1,5 +1,6 @@
 use super::session::Session;
 use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows};
+use application::Settings;
 use dioxus::prelude::*;
 
 /// Indentation per tree level in pixels.
@@ -15,6 +16,7 @@ pub fn BranchesColumn() -> Element {
         None => Vec::new(),
     };
     let selected = session.selected_branch.read().clone();
+    let guides = use_context::<Signal<Settings>>().read().indent_guides;
 
     rsx! {
         section { class: "column branches",
@@ -22,7 +24,7 @@ pub fn BranchesColumn() -> Element {
             if let Some(error) = error {
                 p { class: "column-error", "{error}" }
             }
-            ul { class: "tree",
+            ul { class: if guides { "tree guides" } else { "tree" },
                 for row in rows {
                     match row.kind {
                         BranchRowKind::Section(title) => rsx! {
@@ -31,7 +33,7 @@ pub fn BranchesColumn() -> Element {
                         BranchRowKind::Folder { key, name, collapsed: is_collapsed } => rsx! {
                             li {
                                 class: "tree-row folder",
-                                style: "padding-left: {folder_indent(row.depth)}px;",
+                                style: "padding-left: {folder_indent(row.depth)}px; --depth: {row.depth};",
                                 onclick: move |_| {
                                     let mut set = collapsed.write();
                                     if !set.remove(&key) {
@@ -93,7 +95,7 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
         li {
             class: "{class}",
             title: "{title}",
-            style: "padding-left: {indent}px;",
+            style: "padding-left: {indent}px; --depth: {depth};",
             onclick: move |_| session.select_branch(&click_item),
             ondoubleclick: move |_| session.set_filter(Some(filter_item.clone())),
             span { class: "marker", if item.is_head { "●" } }

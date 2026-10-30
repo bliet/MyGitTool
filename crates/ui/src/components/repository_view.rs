@@ -2,8 +2,11 @@ use super::branches::BranchesColumn;
 use super::details::DetailsColumn;
 use super::history::HistoryColumn;
 use super::session::Session;
+use super::update_settings;
 use crate::launch::Services;
+use crate::state::AppState;
 use crate::view::columns::{ColumnLayout, Side};
+use application::Settings;
 use dioxus::prelude::*;
 use domain::RepositoryInfo;
 
@@ -37,7 +40,10 @@ pub fn RepositoryView(
     on_close: EventHandler<()>,
 ) -> Element {
     let services = use_context::<Services>();
-    let session = use_context_provider(|| Session::new(services, repo.clone()));
+    let session = use_context_provider(|| Session::new(services.clone(), repo.clone()));
+    let settings = use_context::<Signal<Settings>>();
+    let app = use_context::<Signal<AppState>>();
+    let guides = settings.read().indent_guides;
     let mut layout = use_signal(ColumnLayout::default);
     let mut total_width = use_signal(|| 1400.0);
     let mut drag = use_signal(|| None::<Drag>);
@@ -74,6 +80,15 @@ pub fn RepositoryView(
             span { class: "repo-name", "{name}" }
             span { class: "repo-path", title: "{location}", "{location}" }
             div { class: "spacer" }
+            button {
+                class: if guides { "active" } else { "" },
+                title: if guides { "Hide indent guides in trees" } else { "Show indent guides in trees" },
+                aria_pressed: "{guides}",
+                onclick: move |_| {
+                    update_settings(&services, settings, app, |s| s.indent_guides = !s.indent_guides)
+                },
+                "┊ Guides"
+            }
             button { title: "Refresh (F5)", onclick: move |_| session.refresh(), "⟳ Refresh" }
             button { onclick: move |_| on_pick.call(()), "Open…" }
             button { onclick: move |_| on_close.call(()), "Close" }

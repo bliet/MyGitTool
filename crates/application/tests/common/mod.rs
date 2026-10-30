@@ -1,7 +1,9 @@
 //! Hand-written fakes of the port traits, shared by the use case tests.
 #![allow(dead_code)]
 
-use application::{LocateError, RecentRepositoriesStore, RepositoryLocator, StorageError};
+use application::{
+    LocateError, RecentRepositoriesStore, RepositoryLocator, Settings, SettingsStore, StorageError,
+};
 use domain::RepositoryInfo;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -246,5 +248,22 @@ impl application::RepositoryReader for FakeReader {
                 size if size > limit => domain::FileContent::TooLarge { size },
                 _ => domain::FileContent::Bytes(bytes.clone()),
             }))
+    }
+}
+
+/// An in-memory settings store; `None` until something is saved.
+#[derive(Default)]
+pub struct FakeSettingsStore {
+    pub settings: Mutex<Option<Settings>>,
+}
+
+impl SettingsStore for FakeSettingsStore {
+    fn load(&self) -> Result<Option<Settings>, StorageError> {
+        Ok(*self.settings.lock().unwrap())
+    }
+
+    fn save(&self, settings: &Settings) -> Result<(), StorageError> {
+        *self.settings.lock().unwrap() = Some(*settings);
+        Ok(())
     }
 }

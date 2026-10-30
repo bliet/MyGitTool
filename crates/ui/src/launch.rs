@@ -2,7 +2,7 @@ use crate::components::App;
 use crate::state::AppState;
 use application::{
     ComputeFileDiff, GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges,
-    OpenRepository, RecentRepositories, Startup,
+    OpenRepository, RecentRepositories, Startup, UserSettings,
 };
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 
@@ -18,6 +18,7 @@ pub struct Services {
     pub get_commit_details: GetCommitDetails,
     pub load_work_tree_changes: LoadWorkTreeChanges,
     pub compute_file_diff: ComputeFileDiff,
+    pub user_settings: UserSettings,
 }
 
 /// Opens the main window and runs the UI until it is closed.

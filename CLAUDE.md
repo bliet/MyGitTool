@@ -20,9 +20,9 @@ app (binary, composition root)
 | Crate | Responsibility | May depend on |
 |---|---|---|
 | `crates/domain` | Pure types and rules: `Commit`, `CommitId`, `Branch` (local/remote), `Remote`, `Signature`, `FileChange`, `ChangeKind`, `DiffHunk`, `GraphLane`, the domain errors | `std` and small pure crates only (e.g. `thiserror`). **No I/O.** |
-| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
+| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`, `UserSettings`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `SettingsStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
 | `crates/infra-git` | Adapters that implement the ports with `git2` (and `notify` for the watcher) | `application`, `domain`, `git2`, `notify` |
-| `crates/infra-config` | Adapters for app state in the user config dir (e.g. the recent-repositories list as JSON) | `application`, `serde`, `directories` |
+| `crates/infra-config` | Adapters for app state in the user config dir (the recent-repositories list and the user settings as JSON) | `application`, `serde`, `directories` |
 | `crates/ui` | Dioxus components and view state. Calls use cases only, never git2. | `application`, `domain`, `dioxus` |
 | `crates/app` | `main`. Parses the CLI argument, builds the adapters, injects them into the use cases and launches the UI. | everything |
 

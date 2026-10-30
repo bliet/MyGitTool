@@ -4,9 +4,9 @@
 use anyhow::Context;
 use application::{
     ComputeFileDiff, GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges,
-    OpenRepository, RecentRepositories,
+    OpenRepository, RecentRepositories, UserSettings,
 };
-use infra_config::JsonRecentRepositoriesStore;
+use infra_config::{JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{GitRepositoryLocator, GitRepositoryReader};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -41,6 +41,7 @@ fn main() -> anyhow::Result<ExitCode> {
         JsonRecentRepositoriesStore::in_config_dir(&config_dir),
     ));
 
+    let user_settings = UserSettings::new(Arc::new(JsonSettingsStore::in_config_dir(&config_dir)));
     let reader = Arc::new(GitRepositoryReader);
 
     let current_dir = std::env::current_dir().ok();
@@ -55,6 +56,7 @@ fn main() -> anyhow::Result<ExitCode> {
             get_commit_details: GetCommitDetails::new(reader.clone()),
             load_work_tree_changes: LoadWorkTreeChanges::new(reader.clone()),
             compute_file_diff: ComputeFileDiff::new(reader),
+            user_settings,
         },
         startup,
     );

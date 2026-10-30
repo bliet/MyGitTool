@@ -9,7 +9,7 @@ mod welcome;
 
 use crate::launch::Services;
 use crate::state::{AppState, Screen};
-use application::StorageError;
+use application::{Settings, StorageError};
 use diff_window::DiffWindows;
 use dioxus::prelude::*;
 use error_banner::ErrorBanner;
@@ -22,7 +22,21 @@ pub fn App() -> Element {
     let services = use_context::<Services>();
     let initial = use_context::<AppState>();
     let mut state = use_context_provider(|| Signal::new(initial));
+    let mut settings = use_context_provider(|| Signal::new(Settings::default()));
     let diff_windows = use_context_provider(DiffWindows::default);
+
+    use_hook({
+        let user_settings = services.user_settings.clone();
+        move || {
+            spawn(async move {
+                match blocking(move || user_settings.load()).await {
+                    Ok(Ok(loaded)) => settings.set(loaded),
+                    Ok(Err(err)) => state.write().error = Some(format!("Settings: {err}")),
+                    Err(message) => state.write().error = Some(message),
+                }
+            });
+        }
+    });
     use_drop(move || diff_windows.close_all());
 
     // Load the recent list once. A repository opened at startup is recorded
@@ -92,6 +106,25 @@ pub fn App() -> Element {
             }
         }
     }
+}
+
+/// Applies a change to the settings and saves them in the background.
+pub(crate) fn update_settings(
+    services: &Services,
+    mut settings: Signal<Settings>,
+    mut state: Signal<AppState>,
+    change: impl FnOnce(&mut Settings),
+) {
+    change(&mut settings.write());
+    let saved = *settings.peek();
+    let user_settings = services.user_settings.clone();
+    spawn(async move {
+        match blocking(move || user_settings.save(&saved)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => state.write().error = Some(format!("Settings: {err}")),
+            Err(message) => state.write().error = Some(message),
+        }
+    });
 }
 
 async fn open_path(services: Services, mut state: Signal<AppState>, path: PathBuf) {

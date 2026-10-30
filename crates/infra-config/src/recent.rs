@@ -1,8 +1,7 @@
+use crate::json_file;
 use application::{RecentRepositoriesStore, StorageError};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -51,14 +50,8 @@ impl JsonRecentRepositoriesStore {
 
 impl RecentRepositoriesStore for JsonRecentRepositoriesStore {
     fn load(&self) -> Result<Vec<PathBuf>, StorageError> {
-        let content = match fs::read_to_string(&self.file) {
-            Ok(content) => content,
-            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(err) => return Err(StorageError::new(self.context("cannot read"), err)),
-        };
-        let parsed: RecentFile = serde_json::from_str(&content)
-            .map_err(|err| StorageError::new(self.context("cannot parse"), err))?;
-        Ok(parsed.repositories)
+        let file: Option<RecentFile> = json_file::read(&self.file)?;
+        Ok(file.map(|f| f.repositories).unwrap_or_default())
     }
 
     fn save(&self, paths: &[PathBuf]) -> Result<(), StorageError> {
@@ -66,25 +59,6 @@ impl RecentRepositoriesStore for JsonRecentRepositoriesStore {
             version: FORMAT_VERSION,
             repositories: paths.to_vec(),
         };
-        let json = serde_json::to_string_pretty(&data)
-            .map_err(|err| StorageError::new(self.context("cannot serialize"), err))?;
-        if let Some(parent) = self.file.parent() {
-            fs::create_dir_all(parent).map_err(|err| {
-                StorageError::new(self.context("cannot create the directory for"), err)
-            })?;
-        }
-        // Write to a sibling file and rename it, so a crash never leaves a
-        // half-written file behind.
-        let tmp = self.file.with_extension("json.tmp");
-        fs::write(&tmp, json)
-            .map_err(|err| StorageError::new(self.context("cannot write"), err))?;
-        fs::rename(&tmp, &self.file)
-            .map_err(|err| StorageError::new(self.context("cannot write"), err))
-    }
-}
-
-impl JsonRecentRepositoriesStore {
-    fn context(&self, what: &str) -> String {
-        format!("{what} {}", self.file.display())
+        json_file::write(&self.file, &data)
     }
 }

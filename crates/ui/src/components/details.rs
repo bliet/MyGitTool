@@ -190,6 +190,9 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
     };
     let mut mode = session.file_mode;
     let current = *mode.read();
+    let guides = use_context::<Signal<application::Settings>>()
+        .read()
+        .indent_guides;
     let rows = file_rows(&changes, current);
     let additions: usize = changes.iter().map(|c| c.additions).sum();
     let deletions: usize = changes.iter().map(|c| c.deletions).sum();
@@ -217,11 +220,11 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
                 }
             }
         }
-        ul { class: "files",
+        ul { class: if guides { "files guides" } else { "files" },
             for (row, indent) in rows.into_iter().map(|r| { let indent = 8 + r.depth * INDENT; (r, indent) }) {
                 match row.change.map(|i| &changes[i]) {
                     None => rsx! {
-                        li { class: "file dir", style: "padding-left: {indent}px;",
+                        li { class: "file dir", style: "padding-left: {indent}px; --depth: {row.depth};",
                             span { class: "status" }
                             span { class: "path", "{row.name}/" }
                         }
@@ -229,7 +232,7 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
                     Some(change) => rsx! {
                         li {
                             class: "file",
-                            style: "padding-left: {indent}px;",
+                            style: "padding-left: {indent}px; --depth: {row.depth};",
                             title: "{change.path} — double-click to show the diff",
                             ondoubleclick: {
                                 let change = change.clone();

@@ -50,6 +50,20 @@ impl StorageError {
     }
 }
 
+/// User preferences that persist across sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Settings {
+    /// Draw lines that show the indentation levels of tree views.
+    pub indent_guides: bool,
+}
+
+/// Persists the user's settings.
+pub trait SettingsStore: Send + Sync {
+    /// Returns the stored settings, or `None` if nothing was stored yet.
+    fn load(&self) -> Result<Option<Settings>, StorageError>;
+    fn save(&self, settings: &Settings) -> Result<(), StorageError>;
+}
+
 /// Which commits a history walk covers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HistoryScope {

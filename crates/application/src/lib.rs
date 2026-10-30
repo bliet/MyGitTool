@@ -12,6 +12,7 @@ mod open_repository;
 mod ports;
 mod recent_repositories;
 mod refs;
+mod settings;
 mod work_tree;
 
 pub use commit_details::GetCommitDetails;
@@ -22,8 +23,9 @@ pub use history::{HistoryPager, HistoryRow, LoadHistory};
 pub use open_repository::{OpenRepository, Startup};
 pub use ports::{
     HistoryCursor, HistoryScope, LocateError, ReadError, RecentRepositoriesStore,
-    RepositoryLocator, RepositoryReader, StorageError,
+    RepositoryLocator, RepositoryReader, Settings, SettingsStore, StorageError,
 };
 pub use recent_repositories::{DEFAULT_CAPACITY, RecentRepositories};
 pub use refs::{LoadBranches, RefIndex, RefLabel, RefLabelKind, RemoteBranches, RepositoryRefs};
+pub use settings::UserSettings;
 pub use work_tree::LoadWorkTreeChanges;
