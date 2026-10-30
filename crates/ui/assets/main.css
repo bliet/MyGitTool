@@ -243,6 +243,12 @@ h2 {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* A subtle rule between the local branches and the remotes. */
+.tree-section:not(:first-child) {
+  margin: 8px 12px 0;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--border);
+}
 .tree-row {
   display: flex;
   align-items: center;
