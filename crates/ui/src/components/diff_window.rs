@@ -3,8 +3,8 @@
 use super::blocking;
 use crate::launch::STYLE;
 use crate::view::diff::{
-    DIFF_ROW_HEIGHT, DiffKey, Direction, Step, content_width, format_size, rows_on_screen,
-    scroll_top_for, segments, side_class, side_labels, status, step, window_title,
+    DIFF_ROW_HEIGHT, DiffKey, Direction, Jump, Step, at_end_hint, content_width, format_size, jump,
+    rows_on_screen, scroll_top_for, segments, side_class, side_labels, status, window_title,
 };
 use crate::view::history::visible_rows;
 use application::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
@@ -147,6 +147,9 @@ impl PartialEq for Loaded {
 struct Navigation {
     current: Option<usize>,
     last: Option<(Step, Direction)>,
+    /// Set after a press found no further change in this direction; the
+    /// next press in the same direction wraps around.
+    at_end: Option<Direction>,
 }
 
 #[component]
@@ -158,6 +161,7 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
     let mut navigation = use_signal(|| Navigation {
         current: None,
         last: None,
+        at_end: None,
     });
     // The scroll position to apply once the rows are rendered.
     let mut pending_scroll = use_signal(|| None::<f64>);
@@ -177,6 +181,7 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
                 DiffBody::Text(text) => content_width(text),
                 _ => 0,
             };
+            navigation.write().at_end = None;
             // Start at the first change.
             if first
                 && let DiffBody::Text(text) = &loaded.body
@@ -185,6 +190,7 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
                 navigation.set(Navigation {
                     current: Some(0),
                     last: None,
+                    at_end: None,
                 });
                 pending_scroll.set(Some(scroll_top_for(hunk)));
             }
@@ -195,7 +201,7 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
         });
     });
 
-    let mut jump = move |direction: Direction| {
+    let mut navigate = move |direction: Direction| {
         let DiffState::Ready(loaded) = &*state.peek() else {
             return;
         };
@@ -203,13 +209,20 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
             return;
         };
         let on_screen = rows_on_screen(*scroll_top.peek(), *height.peek(), text.rows.len());
-        let current = navigation.peek().current;
-        if let Some(next) = step(&text.hunks, current, on_screen, direction) {
-            navigation.set(Navigation {
-                current: Some(next.index),
-                last: Some((next, direction)),
-            });
-            pending_scroll.set(Some(scroll_top_for(&text.hunks[next.index])));
+        let Navigation {
+            current, at_end, ..
+        } = *navigation.peek();
+        match jump(&text.hunks, current, on_screen, direction, at_end) {
+            Some(Jump::To(next)) => {
+                navigation.set(Navigation {
+                    current: Some(next.index),
+                    last: Some((next, direction)),
+                    at_end: None,
+                });
+                pending_scroll.set(Some(scroll_top_for(&text.hunks[next.index])));
+            }
+            Some(Jump::AtEnd(direction)) => navigation.write().at_end = Some(direction),
+            None => {}
         }
     };
 
@@ -220,8 +233,8 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
             while let Ok(key) = keys.recv::<String>().await {
                 match key.as_str() {
                     "F5" => load.call(false),
-                    "F6" => jump(Direction::Previous),
-                    "F7" => jump(Direction::Next),
+                    "F6" => navigate(Direction::Previous),
+                    "F7" => navigate(Direction::Next),
                     "Escape" => dioxus::desktop::window().close(),
                     _ => {}
                 }
@@ -301,6 +314,9 @@ fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> E
                         }
                     },
                 },
+            }
+            if let Some(direction) = nav.at_end {
+                div { class: "diff-hint", role: "status", {at_end_hint(direction)} }
             }
             footer { class: "status-bar",
                 span { "{status_text}" }

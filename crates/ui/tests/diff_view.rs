@@ -3,8 +3,9 @@
 
 use domain::{CommitId, DiffHunk, DiffLine, DiffRow, DiffSource, RowKind, SideBySide};
 use ui::view::diff::{
-    CONTEXT_ROWS, DIFF_ROW_HEIGHT, Direction, Step, content_width, display_width, format_size,
-    rows_on_screen, scroll_top_for, segments, side_class, side_labels, status, step, window_title,
+    CONTEXT_ROWS, DIFF_ROW_HEIGHT, Direction, Jump, Step, at_end_hint, content_width,
+    display_width, format_size, jump, rows_on_screen, scroll_top_for, segments, side_class,
+    side_labels, status, step, window_title,
 };
 
 fn hunks(ranges: &[std::ops::Range<usize>]) -> Vec<DiffHunk> {
@@ -63,6 +64,66 @@ fn a_change_at_the_top_of_the_screen_is_the_next_one() {
 #[test]
 fn no_changes_means_no_step() {
     assert_eq!(step(&[], None, 0..10, Direction::Next), None);
+}
+
+#[test]
+fn passing_the_last_change_first_stops_and_then_wraps() {
+    let h = hunks(&[2..3, 10..12, 40..41]);
+    let first = jump(&h, Some(2), 30..60, Direction::Next, None);
+    assert_eq!(first, Some(Jump::AtEnd(Direction::Next)));
+    let second = jump(&h, Some(2), 30..60, Direction::Next, Some(Direction::Next));
+    assert_eq!(second, wrapped(0).map(Jump::To));
+}
+
+#[test]
+fn passing_the_first_change_first_stops_and_then_wraps() {
+    let h = hunks(&[2..3, 10..12]);
+    let first = jump(&h, Some(0), 0..30, Direction::Previous, None);
+    assert_eq!(first, Some(Jump::AtEnd(Direction::Previous)));
+    let second = jump(
+        &h,
+        Some(0),
+        0..30,
+        Direction::Previous,
+        Some(Direction::Previous),
+    );
+    assert_eq!(second, wrapped(1).map(Jump::To));
+}
+
+#[test]
+fn stopping_at_one_end_does_not_arm_the_other_direction() {
+    let h = hunks(&[2..3, 10..12]);
+    let back = jump(
+        &h,
+        Some(1),
+        0..30,
+        Direction::Previous,
+        Some(Direction::Next),
+    );
+    assert_eq!(back, at(0).map(Jump::To));
+    let at_start = jump(
+        &h,
+        Some(0),
+        0..30,
+        Direction::Previous,
+        Some(Direction::Next),
+    );
+    assert_eq!(at_start, Some(Jump::AtEnd(Direction::Previous)));
+}
+
+#[test]
+fn jumps_within_the_file_need_one_press() {
+    let h = hunks(&[2..3, 10..12]);
+    assert_eq!(
+        jump(&h, Some(0), 0..30, Direction::Next, None),
+        at(1).map(Jump::To)
+    );
+}
+
+#[test]
+fn at_end_hints_name_the_key_to_press_again() {
+    assert!(at_end_hint(Direction::Next).contains("F7 again"));
+    assert!(at_end_hint(Direction::Previous).contains("F6 again"));
 }
 
 #[test]

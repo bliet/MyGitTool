@@ -72,6 +72,45 @@ pub fn step(
     })
 }
 
+/// What pressing F7 or F6 does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Jump {
+    To(Step),
+    /// There is no further change in this direction. Nothing moves; the
+    /// next press in the same direction wraps around.
+    AtEnd(Direction),
+}
+
+/// Like [`step`], but a wrap needs two presses: the first one only reports
+/// [`Jump::AtEnd`], and the wrap happens if the press before was that same
+/// report (`at_end`).
+pub fn jump(
+    hunks: &[DiffHunk],
+    current: Option<usize>,
+    visible: Range<usize>,
+    direction: Direction,
+    at_end: Option<Direction>,
+) -> Option<Jump> {
+    let next = step(hunks, current, visible, direction)?;
+    Some(if next.wrapped && at_end != Some(direction) {
+        Jump::AtEnd(direction)
+    } else {
+        Jump::To(next)
+    })
+}
+
+/// The hint shown after [`Jump::AtEnd`].
+pub fn at_end_hint(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Next => {
+            "No more changes in this file — press F7 again to go to the first change"
+        }
+        Direction::Previous => {
+            "No earlier changes in this file — press F6 again to go to the last change"
+        }
+    }
+}
+
 fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
     a.start < b.end && b.start < a.end
 }

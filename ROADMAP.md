@@ -32,7 +32,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [x] Use case `ComputeFileDiff`: old and new content via the port, a line diff with `similar`, aligned side-by-side rows, and changes highlighted within lines
 - [x] Double-clicking a changed file opens a **separate window** (one per file)
 - [x] Side-by-side view with line numbers, synchronized scrolling, and colours for added, removed and changed lines
-- [x] `F7` jumps to the next change and `F6` to the previous one (wrapping, with a status-bar hint). `Esc` closes the window.
+- [x] `F7` jumps to the next change and `F6` to the previous one. Past the last (or first) change, a hint says there are no more changes, and only a second press wraps around. `Esc` closes the window.
 - [x] Edge cases: binary files ("Binary file changed"), renames (show both paths), added and deleted files (one empty side), very large files
 - [x] Works for the uncommitted-changes row too (HEAD vs. work tree)
 

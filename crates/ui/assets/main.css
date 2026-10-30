@@ -488,6 +488,26 @@ button.copy { padding: 0 4px; font-size: 12px; }
     135deg, var(--diff-filler) 0 4px, transparent 4px 8px);
 }
 .diff-row.current .ln { border-left-color: var(--diff-current); }
+.diff-window { position: relative; }
+.diff-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: diff-hint-in 120ms ease-out;
+}
+@keyframes diff-hint-in {
+  from { opacity: 0; transform: translate(-50%, 4px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 .status-bar {
   display: flex;
   align-items: center;
