@@ -111,6 +111,13 @@ button {
 }
 button:hover { background: var(--bg-hover); }
 button.active { background: var(--selected-strong); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:disabled:hover { background: var(--bg-panel); }
+.button-group { display: inline-flex; }
+.button-group button { border-radius: 0; }
+.button-group button + button { border-left: none; }
+.button-group button:first-child { border-radius: 4px 0 0 4px; }
+.button-group button:last-child { border-radius: 0 4px 4px 0; }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -542,3 +549,108 @@ button.copy { padding: 0 4px; font-size: 12px; }
   font-size: 12px;
 }
 .status-bar .spacer { flex: 1; }
+
+/* Remote operations: status strip */
+.op-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.op-status .spacer { flex: 1; }
+.op-status button { padding: 1px 10px; }
+.op-label { font-weight: 600; }
+.op-detail { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.op-check { color: var(--add); font-weight: 700; }
+.op-bar {
+  width: 160px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.op-bar-fill { height: 100%; background: var(--accent); transition: width 120ms linear; }
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Dialogs */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.35);
+}
+.dialog {
+  width: min(480px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+.dialog h3 { margin: 0 0 10px; font-size: 15px; }
+.dialog p { margin: 0 0 10px; overflow-wrap: anywhere; }
+.dialog-files {
+  margin: 0 0 12px;
+  padding: 6px 10px;
+  max-height: 200px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.dialog-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.dialog-fields label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-muted); }
+.dialog-fields input, .dialog-fields select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.dialog-fields input:focus, .dialog-fields select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.dialog-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.dialog-buttons button.primary { padding: 4px 14px; }
+
+/* Context menu */
+.menu-backdrop { position: fixed; inset: 0; z-index: 10; }
+.context-menu {
+  position: fixed;
+  z-index: 11;
+  min-width: 180px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.context-menu li { padding: 5px 14px; cursor: default; }
+.context-menu li:hover { background: var(--selected-strong); }
+.context-menu li.disabled { color: var(--fg-muted); }
+.context-menu li.disabled:hover { background: none; }

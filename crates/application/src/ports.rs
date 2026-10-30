@@ -1,6 +1,7 @@
 use domain::{
-    Branch, Commit, CommitDetails, CommitId, FileChange, FileContent, Head, Remote, RepositoryInfo,
-    Revision, Tag,
+    Branch, Commit, CommitDetails, CommitId, Credential, CredentialRequest, FileChange,
+    FileContent, Head, OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision,
+    Tag, Tracking,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -105,6 +106,134 @@ pub trait RepositoryReader: Send + Sync {
         path: &str,
         limit: u64,
     ) -> Result<Option<FileContent>, ReadError>;
+    /// The upstream config of the local branch `branch` (short name), or
+    /// `None` if it has none.
+    fn tracking(&self, repo: &RepositoryInfo, branch: &str) -> Result<Option<Tracking>, ReadError>;
+    /// The commit a ref points to, or `None` if the ref does not exist.
+    fn resolve(&self, repo: &RepositoryInfo, refname: &str) -> Result<Option<CommitId>, ReadError>;
+    /// The number of commits reachable from `local` but not `upstream`, and
+    /// the other way round.
+    fn ahead_behind(
+        &self,
+        repo: &RepositoryInfo,
+        local: CommitId,
+        upstream: CommitId,
+    ) -> Result<(usize, usize), ReadError>;
+    /// Tracked files with staged or unstaged changes, including conflicted
+    /// ones, sorted. Untracked files are left out.
+    fn dirty_files(&self, repo: &RepositoryInfo) -> Result<Vec<String>, ReadError>;
+    /// The merge, rebase or similar the repository is in the middle of.
+    fn ongoing_operation(
+        &self,
+        repo: &RepositoryInfo,
+    ) -> Result<Option<OngoingOperation>, ReadError>;
+    /// How `pull` integrates for the local branch `branch`.
+    fn pull_config(&self, repo: &RepositoryInfo, branch: &str) -> Result<PullConfig, ReadError>;
+}
+
+/// Changes the local repository. Callers check for a dirty work tree first.
+pub trait RepositoryWriter: Send + Sync {
+    /// Moves the checked-out `branch` to `target`, a descendant of its tip,
+    /// and updates the index and work tree.
+    fn fast_forward(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+        target: CommitId,
+    ) -> Result<(), WriteError>;
+    /// Merges `commit` into HEAD with a merge commit, even if a
+    /// fast-forward were possible. Conflicts are left in the index and work
+    /// tree, with the merge in progress.
+    fn merge(
+        &self,
+        repo: &RepositoryInfo,
+        commit: CommitId,
+        message: &str,
+    ) -> Result<Integration, WriteError>;
+    /// Replays the commits of HEAD that `upstream` lacks on top of it. Stops
+    /// at the first conflict and leaves the rebase in progress.
+    fn rebase(&self, repo: &RepositoryInfo, upstream: CommitId) -> Result<Integration, WriteError>;
+    /// Aborts the merge or rebase in progress and restores the state before it.
+    fn abort(&self, repo: &RepositoryInfo) -> Result<(), WriteError>;
+    /// Sets `branch.<branch>.remote` and `branch.<branch>.merge`.
+    fn set_tracking(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        merge_ref: &str,
+    ) -> Result<(), WriteError>;
+}
+
+/// The result of merging or rebasing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Integration {
+    Completed,
+    /// Stopped with conflicts in these files, sorted.
+    Conflicts(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum WriteError {
+    #[error("{0}")]
+    Backend(String),
+}
+
+/// Talks to remotes. Long operations report through `progress`, which can
+/// also cancel them, and ask `credentials` when the chain of automatic
+/// credentials (SSH agent, default SSH keys, Git credential helper) fails.
+pub trait RemoteOperations: Send + Sync {
+    /// Fetches `remote` with its configured refspecs, updating its
+    /// remote-tracking branches.
+    fn fetch(
+        &self,
+        repo: &RepositoryInfo,
+        remote: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError>;
+    /// Pushes the local `branch` to `remote_ref` on `remote`. Never forces:
+    /// an update that is not a fast-forward is rejected.
+    fn push(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError>;
+}
+
+/// Receives the progress of a remote operation.
+pub trait ProgressReporter: Sync {
+    fn report(&self, progress: Progress);
+    /// Polled during the transfer; `true` stops the operation.
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+}
+
+/// Asks the user for credentials, blocking until they answer. `None` means
+/// the user cancelled. Answers are used once and never stored.
+pub trait CredentialProvider: Sync {
+    fn credentials(&self, request: &CredentialRequest) -> Option<Credential>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum RemoteError {
+    #[error("there is no remote named {0}")]
+    UnknownRemote(String),
+    #[error("authentication failed for {0}")]
+    AuthenticationFailed(String),
+    #[error("cancelled")]
+    Cancelled,
+    /// The remote refused to update `reference`, e.g. because it is not a
+    /// fast-forward.
+    #[error("the remote rejected {reference}: {message}")]
+    Rejected { reference: String, message: String },
+    #[error("{0}")]
+    Backend(String),
 }
 
 /// A history walk that hands out commits page by page.

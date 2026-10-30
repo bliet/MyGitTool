@@ -20,7 +20,7 @@ app (binary, composition root)
 | Crate | Responsibility | May depend on |
 |---|---|---|
 | `crates/domain` | Pure types and rules: `Commit`, `CommitId`, `Branch` (local/remote), `Remote`, `Signature`, `FileChange`, `ChangeKind`, `DiffHunk`, `GraphLane`, the domain errors | `std` and small pure crates only (e.g. `thiserror`). **No I/O.** |
-| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`, `UserSettings`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `SettingsStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
+| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`, `AbortOperation`, `UserSettings`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `SettingsStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `ProgressReporter`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
 | `crates/infra-git` | Adapters that implement the ports with `git2` (and `notify` for the watcher) | `application`, `domain`, `git2`, `notify` |
 | `crates/infra-config` | Adapters for app state in the user config dir (the recent-repositories list and the user settings as JSON) | `application`, `serde`, `directories` |
 | `crates/ui` | Dioxus components and view state. Calls use cases only, never git2. | `application`, `domain`, `dioxus` |
@@ -30,7 +30,7 @@ Hard rules:
 - **No `git2` types outside `infra-git`.** Map them to domain types at the adapter boundary.
 - **No Dioxus types outside `ui`.**
 - Port traits are **synchronous**. The UI runs use cases via `tokio::task::spawn_blocking`, and long operations (fetch, push) report progress through a channel or callback that the port defines.
-- Every operation that changes the repository checks for a dirty work tree first. If the tree is dirty, it returns a domain error listing the dirty files. Never discard changes silently.
+- Every operation that changes the repository checks for a dirty work tree first. If the tree is dirty, it returns a domain error (`DirtyWorkTree`) listing the dirty files. Dirty means tracked files with staged or unstaged changes; untracked files don't count. Never discard changes silently.
 - Merge and rebase conflicts: detect them, report the conflicting files, and offer to **abort** or to **leave the state as is** for the user to resolve externally. There is no in-app resolver yet.
 - Credentials are tried in this order: SSH agent, default SSH keys, git credential helper, then a UI prompt via `CredentialProvider`. Never persist secrets.
 - Pull honours `pull.rebase` and `pull.ff` from the git config.

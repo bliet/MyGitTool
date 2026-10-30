@@ -17,6 +17,8 @@ pub struct BranchItem {
     pub behind: Option<usize>,
     /// The upstream is configured but its ref no longer exists.
     pub upstream_gone: bool,
+    /// The remote of a remote branch; `None` for a local branch.
+    pub remote: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +42,13 @@ pub struct BranchRow {
 /// The collapse key of a remote's folder.
 pub fn remote_key(remote: &str) -> String {
     format!("remote:{remote}")
+}
+
+/// The remote whose top-level folder has the collapse key `key`; `None`
+/// for any other folder.
+pub fn remote_of_folder(key: &str) -> Option<&str> {
+    key.strip_prefix("remote:")
+        .filter(|name| !name.contains(':'))
 }
 
 /// Local branches grouped by `/` prefix, then each remote with its branches
@@ -141,6 +150,10 @@ fn push_tree(
 }
 
 fn item(label: &str, branch: &Branch) -> BranchItem {
+    let remote = match &branch.kind {
+        BranchKind::Remote { remote } => Some(remote.clone()),
+        BranchKind::Local { .. } => None,
+    };
     let (is_head, ahead, behind, upstream_gone) = match &branch.kind {
         BranchKind::Local { is_head, upstream } => match upstream {
             Some(up) => (*is_head, up.ahead, up.behind, up.ahead.is_none()),
@@ -157,5 +170,6 @@ fn item(label: &str, branch: &Branch) -> BranchItem {
         ahead,
         behind,
         upstream_gone,
+        remote,
     }
 }

@@ -58,6 +58,38 @@ impl TestRepo {
         }
     }
 
+    /// A clone of the repository at `url`, e.g. a bare `TestRepo` acting as
+    /// a remote, with the same user config.
+    pub fn clone_of(url: &Path) -> Self {
+        let dir = TempDir::new().expect("create temp dir");
+        let repo = Repository::clone(url.to_str().expect("UTF-8 path"), dir.path())
+            .expect("clone repository");
+        {
+            let mut config = repo.config().expect("open repo config");
+            config
+                .set_str("user.name", "Other User")
+                .expect("set user.name");
+            config
+                .set_str("user.email", "other@example.com")
+                .expect("set user.email");
+        }
+        Self {
+            dir,
+            repo,
+            commits: 100,
+        }
+    }
+
+    /// Sets a value in the repository's config.
+    pub fn config(self, key: &str, value: &str) -> Self {
+        self.repo
+            .config()
+            .expect("open repo config")
+            .set_str(key, value)
+            .expect("set config value");
+        self
+    }
+
     /// The repository's root: the work tree, or the Git directory if bare.
     pub fn path(&self) -> &Path {
         self.dir.path()

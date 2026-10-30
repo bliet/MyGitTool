@@ -145,6 +145,15 @@ pub struct FakeReader {
     pub commits: Vec<domain::Commit>,
     pub work_tree: Vec<domain::FileChange>,
     pub files: HashMap<(domain::Revision, String), Vec<u8>>,
+    /// Upstream config by local branch name.
+    pub tracking: HashMap<String, domain::Tracking>,
+    /// Ref targets by full ref name.
+    pub refs: HashMap<String, domain::CommitId>,
+    /// What `ahead_behind` answers for any pair.
+    pub ahead_behind: (usize, usize),
+    pub dirty: Vec<String>,
+    pub ongoing: Option<domain::OngoingOperation>,
+    pub pull_config: domain::PullConfig,
     pub scopes: Mutex<Vec<application::HistoryScope>>,
     /// Every `file_content` call as (revision, path).
     pub reads: Mutex<Vec<(domain::Revision, String)>>,
@@ -174,6 +183,12 @@ impl Default for FakeReader {
             commits: Vec::new(),
             work_tree: Vec::new(),
             files: HashMap::new(),
+            tracking: HashMap::new(),
+            refs: HashMap::new(),
+            ahead_behind: (0, 0),
+            dirty: Vec::new(),
+            ongoing: None,
+            pull_config: domain::PullConfig::default(),
             scopes: Mutex::new(Vec::new()),
             reads: Mutex::new(Vec::new()),
         }
@@ -248,6 +263,179 @@ impl application::RepositoryReader for FakeReader {
                 size if size > limit => domain::FileContent::TooLarge { size },
                 _ => domain::FileContent::Bytes(bytes.clone()),
             }))
+    }
+
+    fn tracking(
+        &self,
+        _: &RepositoryInfo,
+        branch: &str,
+    ) -> Result<Option<domain::Tracking>, application::ReadError> {
+        Ok(self.tracking.get(branch).cloned())
+    }
+
+    fn resolve(
+        &self,
+        _: &RepositoryInfo,
+        refname: &str,
+    ) -> Result<Option<domain::CommitId>, application::ReadError> {
+        Ok(self.refs.get(refname).copied())
+    }
+
+    fn ahead_behind(
+        &self,
+        _: &RepositoryInfo,
+        _: domain::CommitId,
+        _: domain::CommitId,
+    ) -> Result<(usize, usize), application::ReadError> {
+        Ok(self.ahead_behind)
+    }
+
+    fn dirty_files(&self, _: &RepositoryInfo) -> Result<Vec<String>, application::ReadError> {
+        Ok(self.dirty.clone())
+    }
+
+    fn ongoing_operation(
+        &self,
+        _: &RepositoryInfo,
+    ) -> Result<Option<domain::OngoingOperation>, application::ReadError> {
+        Ok(self.ongoing)
+    }
+
+    fn pull_config(
+        &self,
+        _: &RepositoryInfo,
+        _: &str,
+    ) -> Result<domain::PullConfig, application::ReadError> {
+        Ok(self.pull_config)
+    }
+}
+
+/// A writer that records its calls, e.g. `merge <id> <message>`, and
+/// answers merges and rebases with `integration`.
+pub struct FakeWriter {
+    pub calls: Mutex<Vec<String>>,
+    pub integration: application::Integration,
+}
+
+impl Default for FakeWriter {
+    fn default() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            integration: application::Integration::Completed,
+        }
+    }
+}
+
+impl FakeWriter {
+    pub fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, call: String) {
+        self.calls.lock().unwrap().push(call);
+    }
+}
+
+impl application::RepositoryWriter for FakeWriter {
+    fn fast_forward(
+        &self,
+        _: &RepositoryInfo,
+        branch: &str,
+        target: domain::CommitId,
+    ) -> Result<(), application::WriteError> {
+        self.record(format!("fast_forward {branch} {}", target.short()));
+        Ok(())
+    }
+
+    fn merge(
+        &self,
+        _: &RepositoryInfo,
+        commit: domain::CommitId,
+        message: &str,
+    ) -> Result<application::Integration, application::WriteError> {
+        self.record(format!("merge {} {message}", commit.short()));
+        Ok(self.integration.clone())
+    }
+
+    fn rebase(
+        &self,
+        _: &RepositoryInfo,
+        upstream: domain::CommitId,
+    ) -> Result<application::Integration, application::WriteError> {
+        self.record(format!("rebase {}", upstream.short()));
+        Ok(self.integration.clone())
+    }
+
+    fn abort(&self, _: &RepositoryInfo) -> Result<(), application::WriteError> {
+        self.record("abort".to_owned());
+        Ok(())
+    }
+
+    fn set_tracking(
+        &self,
+        _: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        merge_ref: &str,
+    ) -> Result<(), application::WriteError> {
+        self.record(format!("set_tracking {branch} {remote} {merge_ref}"));
+        Ok(())
+    }
+}
+
+/// Remote operations that record their calls, e.g. `fetch origin`, and
+/// fail with `error` if it is set.
+#[derive(Default)]
+pub struct FakeRemote {
+    pub calls: Mutex<Vec<String>>,
+    pub error: Option<application::RemoteError>,
+}
+
+impl FakeRemote {
+    pub fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn answer(&self, call: String) -> Result<(), application::RemoteError> {
+        self.calls.lock().unwrap().push(call);
+        self.error.clone().map_or(Ok(()), Err)
+    }
+}
+
+impl application::RemoteOperations for FakeRemote {
+    fn fetch(
+        &self,
+        _: &RepositoryInfo,
+        remote: &str,
+        _: &dyn application::ProgressReporter,
+        _: &dyn application::CredentialProvider,
+    ) -> Result<(), application::RemoteError> {
+        self.answer(format!("fetch {remote}"))
+    }
+
+    fn push(
+        &self,
+        _: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        _: &dyn application::ProgressReporter,
+        _: &dyn application::CredentialProvider,
+    ) -> Result<(), application::RemoteError> {
+        self.answer(format!("push {branch} {remote} {remote_ref}"))
+    }
+}
+
+/// Ignores progress and never has credentials.
+pub struct Silent;
+
+impl application::ProgressReporter for Silent {
+    fn report(&self, _: domain::Progress) {}
+}
+
+impl application::CredentialProvider for Silent {
+    fn credentials(&self, _: &domain::CredentialRequest) -> Option<domain::Credential> {
+        None
     }
 }
 

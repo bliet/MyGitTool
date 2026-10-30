@@ -38,12 +38,12 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 ## M3: Remote operations
 
-- [ ] Port `RemoteOperations` with progress reporting, plus the git2 adapter
-- [ ] Credential chain: SSH agent, default SSH keys, git credential helper, then a UI prompt (`CredentialProvider`). Nothing is stored.
-- [ ] **Fetch.** On a local branch it fetches the upstream's remote. On a remote branch or remote node it fetches that remote.
-- [ ] **Pull** (current branch only): fetch, then fast-forward, merge or rebase according to `pull.rebase` / `pull.ff`
-- [ ] **Push** a local branch to its upstream (no force push). Offer to set the upstream if none is set.
-- [ ] A progress indicator and an error display that doesn't block the UI
+- [x] Port `RemoteOperations` with progress reporting, plus the git2 adapter
+- [x] Credential chain: SSH agent, default SSH keys, git credential helper, then a UI prompt (`CredentialProvider`). Nothing is stored.
+- [x] **Fetch.** On a local branch it fetches the upstream's remote. On a remote branch or remote node it fetches that remote.
+- [x] **Pull** (current branch only): fetch, then fast-forward, merge or rebase according to `pull.rebase` / `pull.ff`
+- [x] **Push** a local branch to its upstream (no force push). Offer to set the upstream if none is set.
+- [x] A progress indicator and an error display that doesn't block the UI
 
 ## M4: Branch operations
 

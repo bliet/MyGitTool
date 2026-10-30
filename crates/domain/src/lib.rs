@@ -4,7 +4,9 @@ mod branch;
 mod change;
 mod commit;
 mod diff;
+mod remote;
 mod repository;
+mod state;
 
 pub use branch::{Branch, BranchKind, Head, Remote, Tag, Upstream};
 pub use change::{ChangeKind, FileChange};
@@ -13,4 +15,6 @@ pub use diff::{
     DiffBody, DiffHunk, DiffLine, DiffRow, DiffSource, FileContent, FileDiff, Revision, RowKind,
     SideBySide,
 };
+pub use remote::{Credential, CredentialRequest, FastForward, Progress, PullConfig, Tracking};
 pub use repository::RepositoryInfo;
+pub use state::{DirtyWorkTree, OngoingOperation};

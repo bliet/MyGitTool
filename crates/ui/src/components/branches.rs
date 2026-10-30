@@ -1,5 +1,7 @@
+use super::operations::{Menu, Operations};
 use super::session::Session;
-use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows};
+use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows, remote_of_folder};
+use crate::view::operation::{branch_menu, remote_menu};
 use application::Settings;
 use dioxus::prelude::*;
 
@@ -33,6 +35,15 @@ pub fn BranchesColumn() -> Element {
                         BranchRowKind::Folder { key, name, collapsed: is_collapsed } => rsx! {
                             li {
                                 class: "tree-row folder",
+                                title: if remote_of_folder(&key).is_some() { "Right-click to fetch" } else { "" },
+                                oncontextmenu: {
+                                    let remote = remote_of_folder(&key).map(str::to_owned);
+                                    move |event: MouseEvent| {
+                                        if let Some(remote) = &remote {
+                                            open_menu(&event, remote_menu(remote));
+                                        }
+                                    }
+                                },
                                 style: "padding-left: {folder_indent(row.depth)}px; --depth: {row.depth};",
                                 onclick: move |_| {
                                     let mut set = collapsed.write();
@@ -84,12 +95,13 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
         _ => None,
     };
     let title = format!(
-        "{}\nDouble-click to show only this branch's history",
+        "{}\nDouble-click to show only this branch's history\nRight-click to fetch, pull or push",
         item.name
     );
     let indent = folder_indent(depth) + 12;
     let click_item = item.clone();
     let filter_item = item.clone();
+    let menu_item = item.clone();
 
     rsx! {
         li {
@@ -98,6 +110,10 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             style: "padding-left: {indent}px; --depth: {depth};",
             onclick: move |_| session.select_branch(&click_item),
             ondoubleclick: move |_| session.set_filter(Some(filter_item.clone())),
+            oncontextmenu: move |event| {
+                session.select_branch(&menu_item);
+                open_menu(&event, branch_menu(&menu_item));
+            },
             span { class: "marker", if item.is_head { "●" } }
             span { class: "label", "{item.label}" }
             if let Some(tracking) = tracking {
@@ -105,6 +121,17 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             }
         }
     }
+}
+
+/// Opens the context menu at the mouse position.
+fn open_menu(event: &MouseEvent, entries: Vec<crate::view::operation::MenuEntry>) {
+    let mut menu = consume_context::<Operations>().menu;
+    let point = event.client_coordinates();
+    menu.set(Some(Menu {
+        x: point.x,
+        y: point.y,
+        entries,
+    }));
 }
 
 fn folder_indent(depth: usize) -> usize {

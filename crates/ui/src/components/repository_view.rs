@@ -1,17 +1,21 @@
 use super::branches::BranchesColumn;
 use super::details::DetailsColumn;
 use super::history::HistoryColumn;
+use super::operation_views::{ContextMenu, DialogHost, OperationStatus};
+use super::operations::Operations;
 use super::session::Session;
 use super::update_settings;
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::columns::{ColumnLayout, Side};
-use application::Settings;
+use crate::view::operation::RemoteAction;
+use application::{FetchTarget, Settings};
 use dioxus::prelude::*;
 use domain::RepositoryInfo;
 
 /// Keys handled app-wide. The listener calls `preventDefault`, so `F5` never
-/// reloads the web view.
+/// reloads the web view. The web view's own context menu is suppressed; the
+/// app shows its own where it has one.
 const KEY_LISTENER: &str = r#"
     window.__myGitToolKeys?.abort();
     const controller = new AbortController();
@@ -20,6 +24,11 @@ const KEY_LISTENER: &str = r#"
         if (event.key === "F5" || event.key === "Escape") {
             event.preventDefault();
             dioxus.send(event.key);
+        }
+    }, { signal: controller.signal });
+    window.addEventListener("contextmenu", (event) => {
+        if (!event.target.closest?.("input, textarea, .selectable")) {
+            event.preventDefault();
         }
     }, { signal: controller.signal });
     await new Promise(() => {});
@@ -43,6 +52,9 @@ pub fn RepositoryView(
     let session = use_context_provider(|| Session::new(services.clone(), repo.clone()));
     let settings = use_context::<Signal<Settings>>();
     let app = use_context::<Signal<AppState>>();
+    let operations = use_context_provider(|| Operations::new(services.clone(), session, app));
+    let busy = operations.is_running();
+    let push_case = services.push.clone();
     let guides = settings.read().indent_guides;
     let mut layout = use_signal(ColumnLayout::default);
     let mut total_width = use_signal(|| 1400.0);
@@ -55,7 +67,17 @@ pub fn RepositoryView(
             while let Ok(key) = keys.recv::<String>().await {
                 match key.as_str() {
                     "F5" => session.refresh(),
-                    "Escape" => session.set_filter(None),
+                    // Escape closes the innermost thing first.
+                    "Escape" => {
+                        if operations.dialog.peek().is_some() {
+                            operations.dismiss();
+                        } else if operations.menu.peek().is_some() {
+                            let mut menu = operations.menu;
+                            menu.set(None);
+                        } else {
+                            session.set_filter(None);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -80,6 +102,33 @@ pub fn RepositoryView(
             span { class: "repo-name", "{name}" }
             span { class: "repo-path", title: "{location}", "{location}" }
             div { class: "spacer" }
+            div { class: "button-group",
+                button {
+                    title: "Fetch all remotes",
+                    disabled: busy,
+                    onclick: move |_| operations.start(RemoteAction::Fetch(FetchTarget::All)),
+                    "↓ Fetch"
+                }
+                button {
+                    title: "Pull the current branch",
+                    disabled: busy,
+                    onclick: move |_| operations.start(RemoteAction::Pull),
+                    "⇣ Pull"
+                }
+                button {
+                    title: "Push the current branch",
+                    disabled: busy,
+                    onclick: move |_| {
+                        let repo = session.repo.peek().clone();
+                        let mut app = app;
+                        match push_case.current_branch(&repo) {
+                            Ok(branch) => operations.start(RemoteAction::Push { branch }),
+                            Err(err) => app.write().error = Some(format!("Push failed: {err}")),
+                        }
+                    },
+                    "⇡ Push"
+                }
+            }
             button {
                 class: if guides { "active" } else { "" },
                 title: if guides { "Hide indent guides in trees" } else { "Show indent guides in trees" },
@@ -93,6 +142,7 @@ pub fn RepositoryView(
             button { onclick: move |_| on_pick.call(()), "Open…" }
             button { onclick: move |_| on_close.call(()), "Close" }
         }
+        OperationStatus {}
         div {
             class: if dragging { "columns dragging" } else { "columns" },
             style: "grid-template-columns: {template};",
@@ -122,5 +172,7 @@ pub fn RepositoryView(
             }
             DetailsColumn {}
         }
+        ContextMenu {}
+        DialogHost {}
     }
 }

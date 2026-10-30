@@ -7,3 +7,4 @@ pub mod diff;
 pub mod file_tree;
 pub mod format;
 pub mod history;
+pub mod operation;

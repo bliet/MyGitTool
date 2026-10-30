@@ -21,7 +21,7 @@ anyhow = "1.0.104"
 arboard = { version = "3.7.0", default-features = false, features = ["wayland-data-control"] }
 directories = "6.0.0"
 dioxus = { version = "0.7.10", features = ["desktop"] }
-git2 = { version = "0.21.0", features = ["vendored-libgit2"] }
+git2 = { version = "0.21.0", features = ["vendored-libgit2", "ssh", "https"] }
 notify = "8.2.1"
 rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -29,4 +29,4 @@ serde_json = "1.0.154"
 similar = "3.2.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }

@@ -1,12 +1,12 @@
 use crate::map;
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
-    Branch, BranchKind, Commit, CommitDetails, CommitId, FileChange, FileContent, Head, Remote,
-    RepositoryInfo, Revision, Tag, Upstream,
+    Branch, BranchKind, Commit, CommitDetails, CommitId, FastForward, FileChange, FileContent,
+    Head, OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking, Upstream,
 };
 use git2::{
     BranchType, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
-    ReferenceType, Repository, Sort, Tree,
+    ReferenceType, Repository, RepositoryState, Sort, Status, StatusOptions, Tree,
 };
 use std::fs;
 use std::io;
@@ -210,6 +210,128 @@ impl RepositoryReader for GitRepositoryReader {
         };
         tree_content(&git, &tree, path, limit)
     }
+
+    fn tracking(&self, repo: &RepositoryInfo, branch: &str) -> Result<Option<Tracking>, ReadError> {
+        let git = open(repo)?;
+        let refname = format!("refs/heads/{branch}");
+        let not_set = |err: &git2::Error| err.code() == ErrorCode::NotFound;
+        let remote = match git.branch_upstream_remote(&refname) {
+            Ok(remote) => map::text(&remote),
+            Err(err) if not_set(&err) => return Ok(None),
+            Err(err) => return Err(map::error(err)),
+        };
+        let merge_ref = match git.branch_upstream_merge(&refname) {
+            Ok(merge) => map::text(&merge),
+            Err(err) if not_set(&err) => return Ok(None),
+            Err(err) => return Err(map::error(err)),
+        };
+        let tracking_ref = match git.branch_upstream_name(&refname) {
+            Ok(name) => map::text(&name),
+            // No fetch refspec maps the branch, e.g. an unusual remote config.
+            Err(_) => format!(
+                "refs/remotes/{remote}/{}",
+                merge_ref.strip_prefix("refs/heads/").unwrap_or(&merge_ref)
+            ),
+        };
+        Ok(Some(Tracking {
+            remote,
+            merge_ref,
+            tracking_ref,
+        }))
+    }
+
+    fn resolve(&self, repo: &RepositoryInfo, refname: &str) -> Result<Option<CommitId>, ReadError> {
+        let git = open(repo)?;
+        match git.find_reference(refname) {
+            Ok(reference) => {
+                let commit = reference.peel_to_commit().map_err(map::error)?;
+                Ok(Some(map::commit_id(commit.id())))
+            }
+            Err(err) if err.code() == ErrorCode::NotFound => Ok(None),
+            Err(err) => Err(map::error(err)),
+        }
+    }
+
+    fn ahead_behind(
+        &self,
+        repo: &RepositoryInfo,
+        local: CommitId,
+        upstream: CommitId,
+    ) -> Result<(usize, usize), ReadError> {
+        let git = open(repo)?;
+        git.graph_ahead_behind(map::oid(local), map::oid(upstream))
+            .map_err(map::error)
+    }
+
+    fn dirty_files(&self, repo: &RepositoryInfo) -> Result<Vec<String>, ReadError> {
+        let git = open(repo)?;
+        if git.is_bare() {
+            return Ok(Vec::new());
+        }
+        let mut options = StatusOptions::new();
+        options
+            .include_untracked(false)
+            .include_ignored(false)
+            .exclude_submodules(true);
+        let statuses = git.statuses(Some(&mut options)).map_err(map::error)?;
+        let changed = Status::all() - Status::WT_NEW - Status::IGNORED;
+        let mut files: Vec<String> = statuses
+            .iter()
+            .filter(|entry| entry.status().intersects(changed))
+            .map(|entry| map::text(entry.path_bytes()))
+            .collect();
+        files.sort();
+        files.dedup();
+        Ok(files)
+    }
+
+    fn ongoing_operation(
+        &self,
+        repo: &RepositoryInfo,
+    ) -> Result<Option<OngoingOperation>, ReadError> {
+        let git = open(repo)?;
+        Ok(match git.state() {
+            RepositoryState::Clean => None,
+            RepositoryState::Merge => Some(OngoingOperation::Merge),
+            RepositoryState::Rebase
+            | RepositoryState::RebaseInteractive
+            | RepositoryState::RebaseMerge => Some(OngoingOperation::Rebase),
+            RepositoryState::CherryPick | RepositoryState::CherryPickSequence => {
+                Some(OngoingOperation::CherryPick)
+            }
+            RepositoryState::Revert | RepositoryState::RevertSequence => {
+                Some(OngoingOperation::Revert)
+            }
+            RepositoryState::Bisect => Some(OngoingOperation::Bisect),
+            RepositoryState::ApplyMailbox | RepositoryState::ApplyMailboxOrRebase => {
+                Some(OngoingOperation::Other)
+            }
+        })
+    }
+
+    fn pull_config(&self, repo: &RepositoryInfo, branch: &str) -> Result<PullConfig, ReadError> {
+        let git = open(repo)?;
+        let config = git.config().map_err(map::error)?;
+        let value = |key: &str| config.get_string(key).ok().map(|v| v.to_ascii_lowercase());
+        // `merges` and `interactive` also rebase; the app rebases plainly.
+        let rebase = value(&format!("branch.{branch}.rebase"))
+            .or_else(|| value("pull.rebase"))
+            .is_some_and(|v| !is_false(&v));
+        let fast_forward = match value("pull.ff").as_deref() {
+            Some("only") => FastForward::Only,
+            Some(v) if is_false(v) => FastForward::Never,
+            _ => FastForward::Allow,
+        };
+        Ok(PullConfig {
+            rebase,
+            fast_forward,
+        })
+    }
+}
+
+/// Git's spellings of a false boolean.
+fn is_false(value: &str) -> bool {
+    matches!(value, "false" | "no" | "off" | "0" | "")
 }
 
 /// The content of a file in a tree, as Git stores it: a symlink is its

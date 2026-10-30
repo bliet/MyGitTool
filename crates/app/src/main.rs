@@ -3,11 +3,13 @@
 
 use anyhow::Context;
 use application::{
-    ComputeFileDiff, GetCommitDetails, LoadBranches, LoadHistory, LoadWorkTreeChanges,
-    OpenRepository, RecentRepositories, UserSettings,
+    AbortOperation, ComputeFileDiff, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
+    LoadWorkTreeChanges, OpenRepository, Pull, Push, RecentRepositories, UserSettings,
 };
 use infra_config::{JsonRecentRepositoriesStore, JsonSettingsStore};
-use infra_git::{GitRepositoryLocator, GitRepositoryReader};
+use infra_git::{
+    GitRemoteOperations, GitRepositoryLocator, GitRepositoryReader, GitRepositoryWriter,
+};
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -43,6 +45,8 @@ fn main() -> anyhow::Result<ExitCode> {
 
     let user_settings = UserSettings::new(Arc::new(JsonSettingsStore::in_config_dir(&config_dir)));
     let reader = Arc::new(GitRepositoryReader);
+    let writer = Arc::new(GitRepositoryWriter);
+    let remote = Arc::new(GitRemoteOperations);
 
     let current_dir = std::env::current_dir().ok();
     let startup = open_repository.resolve_startup(requested.as_deref(), current_dir.as_deref());
@@ -55,8 +59,12 @@ fn main() -> anyhow::Result<ExitCode> {
             load_history: LoadHistory::new(reader.clone()),
             get_commit_details: GetCommitDetails::new(reader.clone()),
             load_work_tree_changes: LoadWorkTreeChanges::new(reader.clone()),
-            compute_file_diff: ComputeFileDiff::new(reader),
+            compute_file_diff: ComputeFileDiff::new(reader.clone()),
             user_settings,
+            fetch: Fetch::new(reader.clone(), remote.clone()),
+            pull: Pull::new(reader.clone(), writer.clone(), remote.clone()),
+            push: Push::new(reader.clone(), writer.clone(), remote),
+            abort_operation: AbortOperation::new(writer),
         },
         startup,
     );

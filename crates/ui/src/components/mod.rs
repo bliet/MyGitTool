@@ -3,6 +3,8 @@ mod details;
 mod diff_window;
 mod error_banner;
 mod history;
+mod operation_views;
+mod operations;
 mod repository_view;
 mod session;
 mod welcome;
