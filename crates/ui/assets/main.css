@@ -29,7 +29,9 @@
   --lane-5: #0c8599;
   --lane-6: #c2255c;
   --lane-7: #5c7cfa;
-  --guide: #d3d8df;
+  /* Translucent, so guides stay visible on hovered and selected rows. */
+  --guide: rgba(29, 33, 41, 0.16);
+  --selected-tree: rgba(47, 111, 222, 0.2);
   --diff-del: #fdeeee;
   --diff-del-emph: #f6c3c0;
   --diff-add: #e8f6ec;
@@ -71,7 +73,8 @@
     --lane-5: #4cc3d6;
     --lane-6: #f06595;
     --lane-7: #91a7ff;
-    --guide: #3b4049;
+    --guide: rgba(227, 230, 235, 0.14);
+    --selected-tree: rgba(90, 143, 240, 0.3);
     --diff-del: #3a2225;
     --diff-del-emph: #6e3238;
     --diff-add: #1e3326;
@@ -262,7 +265,7 @@ h2 {
   cursor: default;
 }
 .tree-row:hover { background-color: var(--bg-hover); }
-.tree-row.selected { background-color: var(--selected-strong); }
+.tree-row.selected { background-color: var(--selected-tree); }
 .tree-row .label { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .tree-row .twisty { width: 12px; color: var(--fg-muted); font-size: 10px; }
 .tree-row .marker { width: 10px; margin-left: -12px; color: var(--badge-head); font-size: 9px; }
