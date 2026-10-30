@@ -154,6 +154,9 @@ pub struct FakeReader {
     pub dirty: Vec<String>,
     pub ongoing: Option<domain::OngoingOperation>,
     pub pull_config: domain::PullConfig,
+    /// What `changed_paths` answers for any pair, sorted.
+    pub changed: Vec<String>,
+    pub conflicts: Vec<String>,
     pub scopes: Mutex<Vec<application::HistoryScope>>,
     /// Every `file_content` call as (revision, path).
     pub reads: Mutex<Vec<(domain::Revision, String)>>,
@@ -189,6 +192,8 @@ impl Default for FakeReader {
             dirty: Vec::new(),
             ongoing: None,
             pull_config: domain::PullConfig::default(),
+            changed: Vec::new(),
+            conflicts: Vec::new(),
             scopes: Mutex::new(Vec::new()),
             reads: Mutex::new(Vec::new()),
         }
@@ -308,6 +313,19 @@ impl application::RepositoryReader for FakeReader {
     ) -> Result<domain::PullConfig, application::ReadError> {
         Ok(self.pull_config)
     }
+
+    fn changed_paths(
+        &self,
+        _: &RepositoryInfo,
+        _: domain::CommitId,
+        _: domain::CommitId,
+    ) -> Result<Vec<String>, application::ReadError> {
+        Ok(self.changed.clone())
+    }
+
+    fn conflicted_files(&self, _: &RepositoryInfo) -> Result<Vec<String>, application::ReadError> {
+        Ok(self.conflicts.clone())
+    }
 }
 
 /// A writer that records its calls, e.g. `merge <id> <message>`, and
@@ -381,6 +399,34 @@ impl application::RepositoryWriter for FakeWriter {
         self.record(format!("set_tracking {branch} {remote} {merge_ref}"));
         Ok(())
     }
+
+    fn checkout(&self, _: &RepositoryInfo, branch: &str) -> Result<(), application::WriteError> {
+        self.record(format!("checkout {branch}"));
+        Ok(())
+    }
+
+    fn create_branch(
+        &self,
+        _: &RepositoryInfo,
+        name: &str,
+        target: domain::CommitId,
+    ) -> Result<(), application::WriteError> {
+        self.record(format!("create_branch {name} {}", target.short()));
+        Ok(())
+    }
+
+    fn delete_branch(&self, _: &RepositoryInfo, name: &str) -> Result<(), application::WriteError> {
+        self.record(format!("delete_branch {name}"));
+        Ok(())
+    }
+
+    fn continue_operation(
+        &self,
+        _: &RepositoryInfo,
+    ) -> Result<application::Integration, application::WriteError> {
+        self.record("continue".to_owned());
+        Ok(self.integration.clone())
+    }
 }
 
 /// Remote operations that record their calls, e.g. `fetch origin`, and
@@ -423,6 +469,17 @@ impl application::RemoteOperations for FakeRemote {
         _: &dyn application::CredentialProvider,
     ) -> Result<(), application::RemoteError> {
         self.answer(format!("push {branch} {remote} {remote_ref}"))
+    }
+
+    fn delete_branch(
+        &self,
+        _: &RepositoryInfo,
+        remote: &str,
+        remote_ref: &str,
+        _: &dyn application::ProgressReporter,
+        _: &dyn application::CredentialProvider,
+    ) -> Result<(), application::RemoteError> {
+        self.answer(format!("delete {remote} {remote_ref}"))
     }
 }
 

@@ -5,7 +5,7 @@ use crate::launch::Services;
 use crate::view::branch_tree::BranchItem;
 use crate::view::file_tree::FileViewMode;
 use crate::view::history::{HistoryList, PAGE_SIZE, ROW_HEIGHT, Selection, scroll_to_reveal};
-use application::{HistoryPager, HistoryScope, RefIndex, RepositoryRefs};
+use application::{HistoryPager, HistoryScope, OngoingState, RefIndex, RepositoryRefs};
 use dioxus::prelude::*;
 use domain::{CommitDetails, CommitId, FileChange, RepositoryInfo};
 use std::collections::HashSet;
@@ -47,6 +47,8 @@ pub struct Session {
     /// The branch the history is filtered to; `None` shows all refs.
     pub filter: Signal<Option<BranchItem>>,
     pub work_tree: Signal<Vec<FileChange>>,
+    /// A merge, rebase or similar in progress, e.g. after conflicts.
+    pub ongoing: Signal<Option<OngoingState>>,
     pub selection: Signal<Option<Selection>>,
     pub selected_branch: Signal<Option<String>>,
     pub details: Signal<DetailsState>,
@@ -69,6 +71,7 @@ impl Session {
             history_loading: Signal::new(false),
             filter: Signal::new(None),
             work_tree: Signal::new(Vec::new()),
+            ongoing: Signal::new(None),
             selection: Signal::new(None),
             selected_branch: Signal::new(None),
             details: Signal::new(DetailsState::Empty),
@@ -91,6 +94,7 @@ impl Session {
         spawn(async move {
             self.load_refs().await;
             self.load_work_tree().await;
+            self.load_ongoing().await;
             self.reset_history().await;
             if let Some(selection) = *self.selection.peek() {
                 self.load_details(selection).await;
@@ -125,6 +129,16 @@ impl Session {
         {
             self.selection.set(None);
             self.details.set(DetailsState::Empty);
+        }
+    }
+
+    async fn load_ongoing(mut self) {
+        let load = self.services.peek().load_ongoing.clone();
+        let repo = self.repo.peek().clone();
+        match blocking(move || load.load(&repo)).await {
+            Ok(Ok(state)) => self.ongoing.set(state),
+            // The banner is only a hint; the operations check again.
+            Ok(Err(_)) | Err(_) => self.ongoing.set(None),
         }
     }
 

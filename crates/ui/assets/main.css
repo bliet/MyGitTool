@@ -30,6 +30,10 @@
   --lane-6: #c2255c;
   --lane-7: #5c7cfa;
   /* Translucent, so guides stay visible on hovered and selected rows. */
+  --warn-bg: #fff4d6;
+  --warn-fg: #6b4a00;
+  --warn-border: #f0d48a;
+  --danger: #c4321f;
   --guide: rgba(29, 33, 41, 0.16);
   --selected-tree: rgba(47, 111, 222, 0.2);
   --diff-del: #fdeeee;
@@ -73,6 +77,10 @@
     --lane-5: #4cc3d6;
     --lane-6: #f06595;
     --lane-7: #91a7ff;
+    --warn-bg: #3a3017;
+    --warn-fg: #f3d68e;
+    --warn-border: #6a5622;
+    --danger: #e0574a;
     --guide: rgba(227, 230, 235, 0.14);
     --selected-tree: rgba(90, 143, 240, 0.3);
     --diff-del: #3a2225;
@@ -654,3 +662,37 @@ button.copy { padding: 0 4px; font-size: 12px; }
 .context-menu li:hover { background: var(--selected-strong); }
 .context-menu li.disabled { color: var(--fg-muted); }
 .context-menu li.disabled:hover { background: none; }
+
+/* Ongoing merge or rebase */
+.ongoing-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  border-bottom: 1px solid var(--warn-border);
+  font-size: 12px;
+}
+.ongoing-banner .message { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ongoing-banner button { padding: 1px 10px; }
+.ongoing-icon { font-size: 13px; }
+
+/* Branch dialogs and menus */
+.context-menu li.separator {
+  height: 1px;
+  margin: 4px 0;
+  padding: 0;
+  background: var(--border);
+}
+.context-menu li.separator:hover { background: var(--border); }
+.field-error { margin: -4px 0 0; color: var(--danger); font-size: 12px; }
+.dialog-fields label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+}
+.dialog-fields input[aria-invalid="true"] { border-color: var(--danger); }
+button.primary.danger { background: var(--danger); border-color: var(--danger); }
+button.primary:disabled { filter: none; }

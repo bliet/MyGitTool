@@ -129,6 +129,16 @@ pub trait RepositoryReader: Send + Sync {
     ) -> Result<Option<OngoingOperation>, ReadError>;
     /// How `pull` integrates for the local branch `branch`.
     fn pull_config(&self, repo: &RepositoryInfo, branch: &str) -> Result<PullConfig, ReadError>;
+    /// The paths whose content differs between the trees of two commits,
+    /// including both paths of a rename, sorted.
+    fn changed_paths(
+        &self,
+        repo: &RepositoryInfo,
+        from: CommitId,
+        to: CommitId,
+    ) -> Result<Vec<String>, ReadError>;
+    /// The files with unresolved conflicts in the index, sorted.
+    fn conflicted_files(&self, repo: &RepositoryInfo) -> Result<Vec<String>, ReadError>;
 }
 
 /// Changes the local repository. Callers check for a dirty work tree first.
@@ -155,6 +165,22 @@ pub trait RepositoryWriter: Send + Sync {
     fn rebase(&self, repo: &RepositoryInfo, upstream: CommitId) -> Result<Integration, WriteError>;
     /// Aborts the merge or rebase in progress and restores the state before it.
     fn abort(&self, repo: &RepositoryInfo) -> Result<(), WriteError>;
+    /// Switches to the local `branch`, updating the index and work tree.
+    /// Local changes to files the switch does not touch are kept; the switch
+    /// fails rather than overwrite any other change or untracked file.
+    fn checkout(&self, repo: &RepositoryInfo, branch: &str) -> Result<(), WriteError>;
+    /// Creates the local branch `name` at `target`. Fails if it exists.
+    fn create_branch(
+        &self,
+        repo: &RepositoryInfo,
+        name: &str,
+        target: CommitId,
+    ) -> Result<(), WriteError>;
+    /// Deletes the local branch `name` and its config section.
+    fn delete_branch(&self, repo: &RepositoryInfo, name: &str) -> Result<(), WriteError>;
+    /// Continues the merge or rebase in progress once its conflicts are
+    /// resolved and staged. A rebase may stop again at a later commit.
+    fn continue_operation(&self, repo: &RepositoryInfo) -> Result<Integration, WriteError>;
     /// Sets `branch.<branch>.remote` and `branch.<branch>.merge`.
     fn set_tracking(
         &self,
@@ -198,6 +224,15 @@ pub trait RemoteOperations: Send + Sync {
         &self,
         repo: &RepositoryInfo,
         branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError>;
+    /// Deletes `remote_ref` on `remote` and its remote-tracking branch.
+    fn delete_branch(
+        &self,
+        repo: &RepositoryInfo,
         remote: &str,
         remote_ref: &str,
         progress: &dyn ProgressReporter,

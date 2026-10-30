@@ -1,14 +1,14 @@
 use super::branches::BranchesColumn;
 use super::details::DetailsColumn;
 use super::history::HistoryColumn;
-use super::operation_views::{ContextMenu, DialogHost, OperationStatus};
+use super::operation_views::{ContextMenu, DialogHost, OngoingBanner, OperationStatus};
 use super::operations::Operations;
 use super::session::Session;
 use super::update_settings;
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::columns::{ColumnLayout, Side};
-use crate::view::operation::RemoteAction;
+use crate::view::operation::Action;
 use application::{FetchTarget, Settings};
 use dioxus::prelude::*;
 use domain::RepositoryInfo;
@@ -106,13 +106,13 @@ pub fn RepositoryView(
                 button {
                     title: "Fetch all remotes",
                     disabled: busy,
-                    onclick: move |_| operations.start(RemoteAction::Fetch(FetchTarget::All)),
+                    onclick: move |_| operations.start(Action::Fetch(FetchTarget::All)),
                     "↓ Fetch"
                 }
                 button {
                     title: "Pull the current branch",
                     disabled: busy,
-                    onclick: move |_| operations.start(RemoteAction::Pull),
+                    onclick: move |_| operations.start(Action::Pull),
                     "⇣ Pull"
                 }
                 button {
@@ -122,7 +122,7 @@ pub fn RepositoryView(
                         let repo = session.repo.peek().clone();
                         let mut app = app;
                         match push_case.current_branch(&repo) {
-                            Ok(branch) => operations.start(RemoteAction::Push { branch }),
+                            Ok(branch) => operations.start(Action::Push { branch }),
                             Err(err) => app.write().error = Some(format!("Push failed: {err}")),
                         }
                     },
@@ -143,6 +143,7 @@ pub fn RepositoryView(
             button { onclick: move |_| on_close.call(()), "Close" }
         }
         OperationStatus {}
+        OngoingBanner {}
         div {
             class: if dragging { "columns dragging" } else { "columns" },
             style: "grid-template-columns: {template};",

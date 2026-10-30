@@ -1,8 +1,10 @@
 use crate::components::App;
 use crate::state::AppState;
 use application::{
-    AbortOperation, ComputeFileDiff, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
-    LoadWorkTreeChanges, OpenRepository, Pull, Push, RecentRepositories, Startup, UserSettings,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
+    Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
+    MergeIntoCurrent, OpenRepository, Pull, Push, RebaseCurrentOnto, RecentRepositories, Startup,
+    UserSettings,
 };
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 
@@ -23,6 +25,13 @@ pub struct Services {
     pub pull: Pull,
     pub push: Push,
     pub abort_operation: AbortOperation,
+    pub checkout: Checkout,
+    pub create_branch: CreateBranch,
+    pub delete_branch: DeleteBranch,
+    pub merge_into_current: MergeIntoCurrent,
+    pub rebase_current_onto: RebaseCurrentOnto,
+    pub continue_operation: ContinueOperation,
+    pub load_ongoing: LoadOngoing,
 }
 
 /// Opens the main window and runs the UI until it is closed.

@@ -1,19 +1,20 @@
-//! Fetch, pull and push in the background: the running operation with its
-//! progress, the dialogs they need, and the branch context menu.
+//! Branch and remote operations in the background: the running operation
+//! with its progress, the dialogs they need, and the context menu.
 
 use super::blocking;
 use super::session::Session;
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::operation::{
-    MenuEntry, RemoteAction, conflict_title, pull_summary, running_label,
+    Action, MenuEntry, conflict_title, dirty_texts, integration_summary, running_label,
 };
 use application::{
-    CredentialProvider, ProgressReporter, PullOutcome, PushDestination, PushPlan, SyncError,
+    CredentialProvider, IntegrationOutcome, OperationError, ProgressReporter, PushDestination,
+    PushPlan, RemoteError,
 };
 use dioxus::dioxus_core::{Runtime, ScopeId, current_scope_id};
 use dioxus::prelude::*;
-use domain::{Credential, CredentialRequest, OngoingOperation, Progress};
+use domain::{CommitId, Credential, CredentialRequest, OngoingOperation, Progress};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -49,10 +50,32 @@ pub enum Dialog {
         remotes: Vec<String>,
     },
     /// The work tree has uncommitted changes in `files`.
-    DirtyWorkTree { title: String, files: Vec<String> },
+    DirtyWorkTree {
+        title: String,
+        intro: String,
+        files: Vec<String>,
+    },
+    /// `what` (e.g. "Merge") stopped with conflicts.
     Conflicts {
+        what: String,
         operation: OngoingOperation,
         files: Vec<String>,
+    },
+    /// Asks for the name of a new branch at `start`.
+    CreateBranch {
+        start: CommitId,
+        from: String,
+        /// Why the last attempt failed, e.g. the name exists.
+        error: Option<String>,
+    },
+    /// The branch has commits the current branch lacks; delete anyway?
+    ConfirmDeleteUnmerged {
+        branch: String,
+        commits: usize,
+    },
+    ConfirmDeleteRemote {
+        remote: String,
+        branch: String,
     },
 }
 
@@ -96,12 +119,23 @@ impl Operations {
         Runtime::current().spawn(self.scope, task);
     }
 
+    /// Opens a context menu at the mouse position of `event`.
+    pub fn open_menu(mut self, event: &MouseEvent, entries: Vec<MenuEntry>) {
+        let point = event.client_coordinates();
+        self.menu.set(Some(Menu {
+            x: point.x,
+            y: point.y,
+            entries,
+        }));
+    }
+
     pub fn is_running(&self) -> bool {
         self.running.read().is_some()
     }
 
-    /// Starts `action` unless another operation is running.
-    pub fn start(mut self, action: RemoteAction) {
+    /// Starts `action` unless another operation is running. Actions that
+    /// need more input open a dialog first.
+    pub fn start(mut self, action: Action) {
         self.menu.set(None);
         if self.running.peek().is_some() {
             return;
@@ -110,10 +144,10 @@ impl Operations {
         let repo = self.session.repo.peek().clone();
         let label = running_label(&action);
         match action {
-            RemoteAction::Fetch(target) => self.spawn(async move {
+            Action::Fetch(target) => self.spawn(async move {
                 let fetch = services.fetch;
                 let result = self
-                    .remote(label, move |progress, credentials| {
+                    .run(label, move |progress, credentials| {
                         fetch.fetch(&repo, &target, progress, credentials)
                     })
                     .await;
@@ -121,24 +155,16 @@ impl Operations {
                     format!("Fetched {}", remotes.join(", "))
                 });
             }),
-            RemoteAction::Pull => self.spawn(async move {
+            Action::Pull => self.spawn(async move {
                 let pull = services.pull;
                 let result = self
-                    .remote(label, move |progress, credentials| {
+                    .run(label, move |progress, credentials| {
                         pull.pull(&repo, progress, credentials)
                     })
                     .await;
-                if let Some(Ok(PullOutcome::Conflicts { operation, files })) = &result {
-                    self.dialog.set(Some(Dialog::Conflicts {
-                        operation: *operation,
-                        files: files.clone(),
-                    }));
-                    self.session.refresh();
-                    return;
-                }
-                self.finish("Pull", result, |outcome| pull_summary(&outcome));
+                self.integrated("Pull", result);
             }),
-            RemoteAction::Push { branch } => self.spawn(async move {
+            Action::Push { branch } => self.spawn(async move {
                 let push = services.push.clone();
                 let plan = {
                     let branch = branch.clone();
@@ -156,6 +182,37 @@ impl Operations {
                     Err(message) => self.app.write().error = Some(message),
                 }
             }),
+            Action::Checkout(target) => self.spawn(async move {
+                let checkout = services.checkout;
+                let result = self
+                    .run(label, move |_, _| checkout.checkout(&repo, &target))
+                    .await;
+                self.finish("Checkout", result, |branch| format!("Switched to {branch}"));
+            }),
+            Action::CreateBranch { start, from } => self.dialog.set(Some(Dialog::CreateBranch {
+                start,
+                from,
+                error: None,
+            })),
+            Action::DeleteLocal { branch } => self.delete_local(branch, false),
+            Action::DeleteRemote { remote, branch } => {
+                self.dialog
+                    .set(Some(Dialog::ConfirmDeleteRemote { remote, branch }));
+            }
+            Action::Merge { refname, .. } => self.spawn(async move {
+                let merge = services.merge_into_current;
+                let result = self
+                    .run(label, move |_, _| merge.merge(&repo, &refname))
+                    .await;
+                self.integrated("Merge", result);
+            }),
+            Action::Rebase { refname, .. } => self.spawn(async move {
+                let rebase = services.rebase_current_onto;
+                let result = self
+                    .run(label, move |_, _| rebase.rebase(&repo, &refname))
+                    .await;
+                self.integrated("Rebase", result);
+            }),
         };
     }
 
@@ -169,12 +226,12 @@ impl Operations {
     async fn push(self, branch: String, destination: PushDestination) {
         let push = self.services.peek().push.clone();
         let repo = self.session.repo.peek().clone();
-        let label = running_label(&RemoteAction::Push {
+        let label = running_label(&Action::Push {
             branch: branch.clone(),
         });
         let remote = destination.remote.clone();
         let result = self
-            .remote(label, move |progress, credentials| {
+            .run(label, move |progress, credentials| {
                 push.push(&repo, &branch, &destination, progress, credentials)
                     .map(|()| branch)
             })
@@ -184,14 +241,108 @@ impl Operations {
         });
     }
 
-    /// Aborts the merge or rebase a pull left behind.
+    /// Creates the branch from the create dialog. A bad or taken name keeps
+    /// the dialog open with the reason.
+    pub fn create_branch(mut self, name: String, start: CommitId, checkout: bool) {
+        let create = self.services.peek().create_branch.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let attempt = {
+                let name = name.clone();
+                self.run("Creating the branch…".to_owned(), move |_, _| {
+                    create.create(&repo, &name, start, checkout)
+                })
+                .await
+            };
+            if let Some(Err(
+                err @ (OperationError::BranchExists(_) | OperationError::InvalidBranchName(_)),
+            )) = &attempt
+            {
+                if let Some(Dialog::CreateBranch { error, .. }) = self.dialog.write().as_mut() {
+                    *error = Some(err.to_string());
+                }
+                return;
+            }
+            self.dialog.set(None);
+            self.finish("Create branch", attempt, |()| {
+                if checkout {
+                    format!("Created and switched to {name}")
+                } else {
+                    format!("Created {name}")
+                }
+            });
+        });
+    }
+
+    /// Deletes a local branch. Without `force`, an unmerged branch asks for
+    /// confirmation first.
+    pub fn delete_local(mut self, branch: String, force: bool) {
+        self.dialog.set(None);
+        let delete = self.services.peek().delete_branch.clone();
+        let repo = self.session.repo.peek().clone();
+        let label = running_label(&Action::DeleteLocal {
+            branch: branch.clone(),
+        });
+        self.spawn(async move {
+            let result = {
+                let branch = branch.clone();
+                self.run(label, move |_, _| {
+                    delete.delete_local(&repo, &branch, force)
+                })
+                .await
+            };
+            if let Some(Err(OperationError::Unmerged { branch, commits })) = result {
+                self.dialog
+                    .set(Some(Dialog::ConfirmDeleteUnmerged { branch, commits }));
+                return;
+            }
+            self.finish("Delete", result, |()| format!("Deleted {branch}"));
+        });
+    }
+
+    /// Deletes a branch on the server, after the confirm dialog.
+    pub fn delete_remote(mut self, remote: String, branch: String) {
+        self.dialog.set(None);
+        let delete = self.services.peek().delete_branch.clone();
+        let repo = self.session.repo.peek().clone();
+        let label = running_label(&Action::DeleteRemote {
+            remote: remote.clone(),
+            branch: branch.clone(),
+        });
+        self.spawn(async move {
+            let summary = format!("Deleted {branch} from {remote}");
+            let result = self
+                .run(label, move |progress, credentials| {
+                    delete.delete_remote(&repo, &remote, &branch, progress, credentials)
+                })
+                .await;
+            self.finish("Delete", result, |()| summary);
+        });
+    }
+
+    /// Continues the merge or rebase in progress.
+    pub fn resume(mut self) {
+        self.dialog.set(None);
+        let resume = self.services.peek().continue_operation.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let result = self
+                .run("Continuing…".to_owned(), move |_, _| resume.resume(&repo))
+                .await;
+            self.integrated("Continue", result);
+        });
+    }
+
+    /// Aborts the merge or rebase in progress.
     pub fn abort(mut self) {
         self.dialog.set(None);
         let abort = self.services.peek().abort_operation.clone();
         let repo = self.session.repo.peek().clone();
         self.spawn(async move {
-            let result = blocking(move || abort.abort(&repo)).await;
-            self.finish("Abort", result.ok(), |()| "Aborted the pull".to_owned());
+            let result = self
+                .run("Aborting…".to_owned(), move |_, _| abort.abort(&repo))
+                .await;
+            self.finish("Abort", result, |()| "Aborted".to_owned());
         });
     }
 
@@ -232,9 +383,10 @@ impl Operations {
         self.answer(None);
     }
 
-    /// Runs `task` on a worker thread, showing its progress and answering
-    /// its credential prompts with a dialog. `None` if the worker panicked.
-    async fn remote<T, F>(mut self, label: String, task: F) -> Option<T>
+    /// Runs `task` on a worker thread, showing it in the status strip with
+    /// its progress, and answering its credential prompts with a dialog.
+    /// `None` if the worker panicked.
+    async fn run<T, F>(mut self, label: String, task: F) -> Option<T>
     where
         T: Send + 'static,
         F: FnOnce(&dyn ProgressReporter, &dyn CredentialProvider) -> T + Send + 'static,
@@ -285,22 +437,43 @@ impl Operations {
         }
     }
 
+    /// Shows the outcome of a pull, merge, rebase or continue: the conflict
+    /// dialog if it stopped, otherwise a notice.
+    fn integrated(
+        mut self,
+        what: &str,
+        result: Option<Result<IntegrationOutcome, OperationError>>,
+    ) {
+        if let Some(Ok(IntegrationOutcome::Conflicts { operation, files })) = &result {
+            self.dialog.set(Some(Dialog::Conflicts {
+                what: what.to_owned(),
+                operation: *operation,
+                files: files.clone(),
+            }));
+            self.session.refresh();
+            return;
+        }
+        self.finish(what, result, |outcome| integration_summary(&outcome));
+    }
+
     /// Shows the outcome and reloads the repository view.
     fn finish<T>(
         mut self,
         what: &str,
-        result: Option<Result<T, SyncError>>,
+        result: Option<Result<T, OperationError>>,
         summary: impl FnOnce(T) -> String,
     ) {
         match result {
             Some(Ok(value)) => self.show_notice(summary(value)),
-            Some(Err(SyncError::DirtyWorkTree(dirty))) => {
+            Some(Err(OperationError::DirtyWorkTree(dirty))) => {
+                let (title, intro) = dirty_texts(what);
                 self.dialog.set(Some(Dialog::DirtyWorkTree {
-                    title: format!("{what} needs a clean work tree"),
+                    title,
+                    intro,
                     files: dirty.files,
                 }));
             }
-            Some(Err(SyncError::Remote(application::RemoteError::Cancelled))) => {
+            Some(Err(OperationError::Remote(RemoteError::Cancelled))) => {
                 self.show_notice(format!("{what} cancelled"));
             }
             Some(Err(err)) => self.fail(what, &err),
@@ -309,7 +482,7 @@ impl Operations {
         self.session.refresh();
     }
 
-    fn fail(mut self, what: &str, err: &SyncError) {
+    fn fail(mut self, what: &str, err: &OperationError) {
         self.app.write().error = Some(format!("{what} failed: {err}"));
     }
 
@@ -367,6 +540,13 @@ pub fn dialog_title(dialog: &Dialog) -> String {
         } => "SSH key passphrase".to_owned(),
         Dialog::SetUpstream { branch, .. } => format!("{branch} has no upstream"),
         Dialog::DirtyWorkTree { title, .. } => title.clone(),
-        Dialog::Conflicts { operation, .. } => conflict_title(*operation),
+        Dialog::Conflicts {
+            what, operation, ..
+        } => conflict_title(what, *operation),
+        Dialog::CreateBranch { from, .. } => format!("New branch from {from}"),
+        Dialog::ConfirmDeleteUnmerged { branch, .. } => format!("Delete {branch}?"),
+        Dialog::ConfirmDeleteRemote { remote, branch } => {
+            format!("Delete {branch} from {remote}?")
+        }
     }
 }

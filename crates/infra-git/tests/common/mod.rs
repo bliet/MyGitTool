@@ -307,6 +307,16 @@ impl TestRepo {
             .expect("HEAD target")
     }
 
+    /// The commit the local branch `name` points to.
+    pub fn head_of(&self, name: &str) -> Oid {
+        self.repo
+            .find_branch(name, BranchType::Local)
+            .expect("find branch")
+            .get()
+            .target()
+            .expect("branch target")
+    }
+
     fn work_path(&self, relative: &str) -> PathBuf {
         let workdir = self
             .repo

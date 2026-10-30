@@ -3,8 +3,10 @@
 
 use anyhow::Context;
 use application::{
-    AbortOperation, ComputeFileDiff, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
-    LoadWorkTreeChanges, OpenRepository, Pull, Push, RecentRepositories, UserSettings,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
+    Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
+    MergeIntoCurrent, OpenRepository, Pull, Push, RebaseCurrentOnto, RecentRepositories,
+    UserSettings,
 };
 use infra_config::{JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{
@@ -63,8 +65,15 @@ fn main() -> anyhow::Result<ExitCode> {
             user_settings,
             fetch: Fetch::new(reader.clone(), remote.clone()),
             pull: Pull::new(reader.clone(), writer.clone(), remote.clone()),
-            push: Push::new(reader.clone(), writer.clone(), remote),
-            abort_operation: AbortOperation::new(writer),
+            push: Push::new(reader.clone(), writer.clone(), remote.clone()),
+            abort_operation: AbortOperation::new(writer.clone()),
+            checkout: Checkout::new(reader.clone(), writer.clone()),
+            create_branch: CreateBranch::new(reader.clone(), writer.clone()),
+            delete_branch: DeleteBranch::new(reader.clone(), writer.clone(), remote),
+            merge_into_current: MergeIntoCurrent::new(reader.clone(), writer.clone()),
+            rebase_current_onto: RebaseCurrentOnto::new(reader.clone(), writer.clone()),
+            continue_operation: ContinueOperation::new(reader.clone(), writer),
+            load_ongoing: LoadOngoing::new(reader.clone()),
         },
         startup,
     );

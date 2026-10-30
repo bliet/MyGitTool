@@ -1,8 +1,8 @@
 mod common;
 
 use application::{
-    AbortOperation, Fetch, FetchTarget, Integration, Pull, PullOutcome, Push, PushDestination,
-    PushPlan, RemoteError, SyncError,
+    AbortOperation, Fetch, FetchTarget, Integration, IntegrationOutcome, OperationError, Pull,
+    Push, PushDestination, PushPlan, RemoteError,
 };
 use common::{FakeReader, FakeRemote, FakeWriter, Silent, id};
 use domain::{
@@ -67,11 +67,14 @@ fn setup(reader: FakeReader, writer: FakeWriter, remote: FakeRemote) -> Setup {
     }
 }
 
-fn pull(reader: FakeReader) -> (Result<PullOutcome, SyncError>, Setup) {
+fn pull(reader: FakeReader) -> (Result<IntegrationOutcome, OperationError>, Setup) {
     pull_with(reader, FakeWriter::default())
 }
 
-fn pull_with(reader: FakeReader, writer: FakeWriter) -> (Result<PullOutcome, SyncError>, Setup) {
+fn pull_with(
+    reader: FakeReader,
+    writer: FakeWriter,
+) -> (Result<IntegrationOutcome, OperationError>, Setup) {
     let setup = setup(reader, writer, FakeRemote::default());
     let result = setup.pull.pull(&repo(), &Silent, &Silent);
     (result, setup)
@@ -100,7 +103,7 @@ fn fetch_all_without_remotes_fails() {
         Arc::new(FakeRemote::default()),
     );
     let result = fetch.fetch(&repo(), &FetchTarget::All, &Silent, &Silent);
-    assert_eq!(result, Err(SyncError::NoRemotes));
+    assert_eq!(result, Err(OperationError::NoRemotes));
 }
 
 #[test]
@@ -128,7 +131,7 @@ fn fetch_on_a_branch_without_upstream_fails() {
         Arc::new(FakeRemote::default()),
     );
     let result = fetch.fetch(&repo(), &FetchTarget::Branch("x".into()), &Silent, &Silent);
-    assert_eq!(result, Err(SyncError::NoUpstream("x".into())));
+    assert_eq!(result, Err(OperationError::NoUpstream("x".into())));
 }
 
 #[test]
@@ -144,7 +147,7 @@ fn fetch_errors_are_passed_on() {
         &Silent,
         &Silent,
     );
-    assert_eq!(result, Err(SyncError::Remote(RemoteError::Cancelled)));
+    assert_eq!(result, Err(OperationError::Remote(RemoteError::Cancelled)));
 }
 
 // Pull: preconditions
@@ -155,7 +158,7 @@ fn pull_needs_a_current_branch() {
         head: Head::Detached(id(1)),
         ..on_main()
     };
-    assert_eq!(pull(reader).0, Err(SyncError::NoCurrentBranch));
+    assert_eq!(pull(reader).0, Err(OperationError::NoCurrentBranch));
 }
 
 #[test]
@@ -166,7 +169,7 @@ fn pull_refuses_while_a_merge_is_in_progress() {
     };
     assert_eq!(
         pull(reader).0,
-        Err(SyncError::OperationInProgress(OngoingOperation::Merge))
+        Err(OperationError::OperationInProgress(OngoingOperation::Merge))
     );
 }
 
@@ -174,7 +177,10 @@ fn pull_refuses_while_a_merge_is_in_progress() {
 fn pull_needs_an_upstream() {
     let mut reader = on_main();
     reader.tracking.clear();
-    assert_eq!(pull(reader).0, Err(SyncError::NoUpstream("main".into())));
+    assert_eq!(
+        pull(reader).0,
+        Err(OperationError::NoUpstream("main".into()))
+    );
 }
 
 #[test]
@@ -186,7 +192,7 @@ fn pull_refuses_a_dirty_work_tree_before_fetching() {
     let (result, setup) = pull(reader);
     assert_eq!(
         result,
-        Err(SyncError::DirtyWorkTree(DirtyWorkTree {
+        Err(OperationError::DirtyWorkTree(DirtyWorkTree {
             files: vec!["a.txt".into(), "src/b.rs".into()]
         }))
     );
@@ -201,7 +207,7 @@ fn pull_fails_if_the_upstream_is_gone_after_fetching() {
     let (result, setup) = pull(reader);
     assert_eq!(
         result,
-        Err(SyncError::UpstreamGone("refs/heads/main".into()))
+        Err(OperationError::UpstreamGone("refs/heads/main".into()))
     );
     assert_eq!(setup.remote.calls(), ["fetch origin"]);
 }
@@ -215,7 +221,7 @@ fn pull_when_nothing_is_new_is_up_to_date() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Ok(PullOutcome::UpToDate));
+    assert_eq!(result, Ok(IntegrationOutcome::UpToDate));
     assert_eq!(setup.remote.calls(), ["fetch origin"]);
     assert!(setup.writer.calls().is_empty());
 }
@@ -227,7 +233,7 @@ fn pull_fast_forwards_when_possible() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Ok(PullOutcome::FastForwarded { to: id(2) }));
+    assert_eq!(result, Ok(IntegrationOutcome::FastForwarded { to: id(2) }));
     assert_eq!(
         setup.writer.calls(),
         [format!("fast_forward main {}", id(2).short())]
@@ -245,7 +251,7 @@ fn pull_with_ff_false_merges_even_when_a_fast_forward_is_possible() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Ok(PullOutcome::Merged));
+    assert_eq!(result, Ok(IntegrationOutcome::Merged));
     assert!(setup.writer.calls()[0].starts_with("merge "));
 }
 
@@ -259,7 +265,10 @@ fn pull_with_rebase_fast_forwards_when_possible() {
         },
         ..on_main()
     };
-    assert_eq!(pull(reader).0, Ok(PullOutcome::FastForwarded { to: id(2) }));
+    assert_eq!(
+        pull(reader).0,
+        Ok(IntegrationOutcome::FastForwarded { to: id(2) })
+    );
 }
 
 #[test]
@@ -269,7 +278,7 @@ fn diverged_pull_merges_by_default_with_gits_message() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Ok(PullOutcome::Merged));
+    assert_eq!(result, Ok(IntegrationOutcome::Merged));
     assert_eq!(
         setup.writer.calls(),
         [format!(
@@ -290,7 +299,7 @@ fn diverged_pull_rebases_when_configured() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Ok(PullOutcome::Rebased));
+    assert_eq!(result, Ok(IntegrationOutcome::Rebased));
     assert_eq!(setup.writer.calls(), [format!("rebase {}", id(2).short())]);
 }
 
@@ -305,7 +314,7 @@ fn diverged_pull_with_ff_only_fails_without_changes() {
         ..on_main()
     };
     let (result, setup) = pull(reader);
-    assert_eq!(result, Err(SyncError::NotFastForward("main".into())));
+    assert_eq!(result, Err(OperationError::NotFastForward("main".into())));
     assert!(setup.writer.calls().is_empty());
 }
 
@@ -321,7 +330,7 @@ fn conflicts_are_reported_with_the_operation_left_in_progress() {
     };
     assert_eq!(
         pull_with(merging, conflicts()).0,
-        Ok(PullOutcome::Conflicts {
+        Ok(IntegrationOutcome::Conflicts {
             operation: OngoingOperation::Merge,
             files: vec!["a.txt".into()]
         })
@@ -337,7 +346,7 @@ fn conflicts_are_reported_with_the_operation_left_in_progress() {
     let (result, setup) = pull_with(rebasing, conflicts());
     assert_eq!(
         result,
-        Ok(PullOutcome::Conflicts {
+        Ok(IntegrationOutcome::Conflicts {
             operation: OngoingOperation::Rebase,
             files: vec!["a.txt".into()]
         })
@@ -390,7 +399,10 @@ fn push_plan_without_any_remote_fails() {
         FakeWriter::default(),
         FakeRemote::default(),
     );
-    assert_eq!(setup.push.plan(&repo(), "topic"), Err(SyncError::NoRemotes));
+    assert_eq!(
+        setup.push.plan(&repo(), "topic"),
+        Err(OperationError::NoRemotes)
+    );
 }
 
 #[test]
@@ -441,7 +453,7 @@ fn a_rejected_push_sets_no_upstream() {
     let result = setup
         .push
         .push(&repo(), "topic", &destination, &Silent, &Silent);
-    assert_eq!(result, Err(SyncError::Remote(rejected)));
+    assert_eq!(result, Err(OperationError::Remote(rejected)));
     assert!(setup.writer.calls().is_empty());
 }
 
@@ -456,6 +468,6 @@ fn the_current_branch_is_pushed_from_the_toolbar() {
     let setup = self::setup(detached, FakeWriter::default(), FakeRemote::default());
     assert_eq!(
         setup.push.current_branch(&repo()),
-        Err(SyncError::NoCurrentBranch)
+        Err(OperationError::NoCurrentBranch)
     );
 }

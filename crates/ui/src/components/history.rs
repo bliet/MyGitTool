@@ -1,6 +1,8 @@
+use super::operations::Operations;
 use super::session::{HISTORY_SCROLL_ID, Session, Viewport};
 use crate::view::format::short_date;
 use crate::view::history::{ROW_HEIGHT, Selection, visible_range};
+use crate::view::operation::commit_menu;
 use application::{EdgeHalf, GraphRow, RefLabel, RefLabelKind};
 use dioxus::prelude::*;
 
@@ -15,6 +17,7 @@ const COLORS: usize = 8;
 #[component]
 pub fn HistoryColumn() -> Element {
     let mut session = use_context::<Session>();
+    let operations = use_context::<Operations>();
     let history = session.history.read();
     let uncommitted = session.work_tree.read().len();
     let offset = usize::from(uncommitted > 0);
@@ -119,7 +122,12 @@ pub fn HistoryColumn() -> Element {
                                     key: "{id}",
                                     class: if selected { "history-row selected" } else { "history-row" },
                                     style: "top: {top}px;",
+                                    title: "Right-click to create a branch here",
                                     onclick: move |_| session.select(Selection::Commit(id)),
+                                    oncontextmenu: move |event| {
+                                        session.select(Selection::Commit(id));
+                                        operations.open_menu(&event, commit_menu(id));
+                                    },
                                     div { class: "graph", {graph(&row.graph, graph_width)} }
                                     span { class: "summary",
                                         for label in labels {

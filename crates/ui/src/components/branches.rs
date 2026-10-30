@@ -1,4 +1,4 @@
-use super::operations::{Menu, Operations};
+use super::operations::Operations;
 use super::session::Session;
 use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows, remote_of_folder};
 use crate::view::operation::{branch_menu, remote_menu};
@@ -40,7 +40,7 @@ pub fn BranchesColumn() -> Element {
                                     let remote = remote_of_folder(&key).map(str::to_owned);
                                     move |event: MouseEvent| {
                                         if let Some(remote) = &remote {
-                                            open_menu(&event, remote_menu(remote));
+                                            consume_context::<Operations>().open_menu(&event, remote_menu(remote));
                                         }
                                     }
                                 },
@@ -112,7 +112,7 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             ondoubleclick: move |_| session.set_filter(Some(filter_item.clone())),
             oncontextmenu: move |event| {
                 session.select_branch(&menu_item);
-                open_menu(&event, branch_menu(&menu_item));
+                consume_context::<Operations>().open_menu(&event, branch_menu(&menu_item));
             },
             span { class: "marker", if item.is_head { "●" } }
             span { class: "label", "{item.label}" }
@@ -121,17 +121,6 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             }
         }
     }
-}
-
-/// Opens the context menu at the mouse position.
-fn open_menu(event: &MouseEvent, entries: Vec<crate::view::operation::MenuEntry>) {
-    let mut menu = consume_context::<Operations>().menu;
-    let point = event.client_coordinates();
-    menu.set(Some(Menu {
-        x: point.x,
-        y: point.y,
-        entries,
-    }));
 }
 
 fn folder_indent(depth: usize) -> usize {

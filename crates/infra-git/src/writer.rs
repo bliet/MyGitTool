@@ -2,7 +2,10 @@ use crate::map;
 use application::{Integration, RepositoryWriter, WriteError};
 use domain::{CommitId, RepositoryInfo};
 use git2::build::CheckoutBuilder;
-use git2::{ErrorCode, Index, MergeOptions, RebaseOptions, Repository, RepositoryState, ResetType};
+use git2::{
+    BranchType, ErrorCode, Index, MergeOptions, Rebase, RebaseOptions, Repository, RepositoryState,
+    ResetType, Signature,
+};
 
 /// Changes repositories with git2. Like the reader, it opens the repository
 /// on every call.
@@ -62,7 +65,9 @@ impl RepositoryWriter for GitRepositoryWriter {
 
         let mut index = git.index().map_err(error)?;
         if index.has_conflicts() {
-            return Ok(Integration::Conflicts(conflicts(&index)?));
+            let files = conflicts(&index)?;
+            write_merge_message(&git, message, &files)?;
+            return Ok(Integration::Conflicts(files));
         }
         let tree = git
             .find_tree(index.write_tree().map_err(error)?)
@@ -94,21 +99,7 @@ impl RepositoryWriter for GitRepositoryWriter {
         let mut rebase = git
             .rebase(None, Some(&upstream), None, Some(&mut RebaseOptions::new()))
             .map_err(error)?;
-        while let Some(operation) = rebase.next() {
-            operation.map_err(error)?;
-            let index = git.index().map_err(error)?;
-            if index.has_conflicts() {
-                return Ok(Integration::Conflicts(conflicts(&index)?));
-            }
-            match rebase.commit(None, &signature, None) {
-                Ok(_) => {}
-                // The change is already upstream; there is nothing to commit.
-                Err(err) if err.code() == ErrorCode::Applied => {}
-                Err(err) => return Err(error(err)),
-            }
-        }
-        rebase.finish(Some(&signature)).map_err(error)?;
-        Ok(Integration::Completed)
+        run_rebase(&git, &mut rebase, &signature)
     }
 
     fn abort(&self, repo: &RepositoryInfo) -> Result<(), WriteError> {
@@ -137,6 +128,104 @@ impl RepositoryWriter for GitRepositoryWriter {
         }
     }
 
+    fn checkout(&self, repo: &RepositoryInfo, branch: &str) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let refname = format!("refs/heads/{branch}");
+        let commit = git
+            .find_reference(&refname)
+            .and_then(|r| r.peel_to_commit())
+            .map_err(error)?;
+        // A safe checkout keeps local changes to files the switch does not
+        // touch, and fails instead of overwriting anything else.
+        git.checkout_tree(commit.as_object(), Some(CheckoutBuilder::new().safe()))
+            .map_err(|err| match err.code() {
+                ErrorCode::Conflict => WriteError::Backend(format!(
+                    "switching to {branch} would overwrite local changes or untracked files ({})",
+                    err.message()
+                )),
+                _ => error(err),
+            })?;
+        git.set_head(&refname).map_err(error)
+    }
+
+    fn create_branch(
+        &self,
+        repo: &RepositoryInfo,
+        name: &str,
+        target: CommitId,
+    ) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let commit = git.find_commit(map::oid(target)).map_err(error)?;
+        git.branch(name, &commit, false).map_err(error)?;
+        Ok(())
+    }
+
+    fn delete_branch(&self, repo: &RepositoryInfo, name: &str) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let mut branch = git.find_branch(name, BranchType::Local).map_err(error)?;
+        // Also removes the branch's config section.
+        branch.delete().map_err(error)
+    }
+
+    fn continue_operation(&self, repo: &RepositoryInfo) -> Result<Integration, WriteError> {
+        let mut git = open(repo)?;
+        let signature = git.signature().map_err(error)?;
+        let index = git.index().map_err(error)?;
+        if index.has_conflicts() {
+            return Ok(Integration::Conflicts(conflicts(&index)?));
+        }
+        match git.state() {
+            RepositoryState::Merge => {
+                let mut heads = Vec::new();
+                git.mergehead_foreach(|oid| {
+                    heads.push(*oid);
+                    true
+                })
+                .map_err(error)?;
+                let mut parents = vec![
+                    git.head()
+                        .and_then(|head| head.peel_to_commit())
+                        .map_err(error)?,
+                ];
+                for oid in heads {
+                    parents.push(git.find_commit(oid).map_err(error)?);
+                }
+                let message = git
+                    .message()
+                    .map(|text| strip_comments(&text))
+                    .unwrap_or_else(|_| "Merge".to_owned());
+                let mut index = index;
+                let tree = git
+                    .find_tree(index.write_tree().map_err(error)?)
+                    .map_err(error)?;
+                let parents: Vec<_> = parents.iter().collect();
+                git.commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    &message,
+                    &tree,
+                    &parents,
+                )
+                .map_err(error)?;
+                git.cleanup_state().map_err(error)?;
+                Ok(Integration::Completed)
+            }
+            RepositoryState::Rebase
+            | RepositoryState::RebaseInteractive
+            | RepositoryState::RebaseMerge => {
+                let mut rebase = git.open_rebase(None).map_err(error)?;
+                if rebase.operation_current().is_some() {
+                    commit_step(&mut rebase, &signature)?;
+                }
+                run_rebase(&git, &mut rebase, &signature)
+            }
+            _ => Err(WriteError::Backend(
+                "there is no merge or rebase to continue".to_owned(),
+            )),
+        }
+    }
+
     fn set_tracking(
         &self,
         repo: &RepositoryInfo,
@@ -155,17 +244,62 @@ impl RepositoryWriter for GitRepositoryWriter {
     }
 }
 
+/// Replaces libgit2's default `MERGE_MSG` with `message`, so continuing
+/// the merge (in the app or with `git commit`) uses it. Lists the conflicts
+/// as comments, as Git does.
+fn write_merge_message(
+    git: &Repository,
+    message: &str,
+    conflicts: &[String],
+) -> Result<(), WriteError> {
+    let mut text = format!("{message}\n\n# Conflicts:\n");
+    for file in conflicts {
+        text.push_str(&format!("#\t{file}\n"));
+    }
+    std::fs::write(git.path().join("MERGE_MSG"), text)
+        .map_err(|err| WriteError::Backend(format!("cannot write MERGE_MSG: {err}")))
+}
+
 /// The paths with conflicts, sorted.
 fn conflicts(index: &Index) -> Result<Vec<String>, WriteError> {
-    let mut paths = Vec::new();
-    for conflict in index.conflicts().map_err(error)? {
-        let conflict = conflict.map_err(error)?;
-        let entry = conflict.our.or(conflict.their).or(conflict.ancestor);
-        if let Some(entry) = entry {
-            paths.push(map::text(&entry.path));
+    map::conflict_paths(index).map_err(error)
+}
+
+/// Applies and commits the remaining steps of `rebase`. Stops at the first
+/// conflict, leaving the rebase in progress.
+fn run_rebase(
+    git: &Repository,
+    rebase: &mut Rebase<'_>,
+    signature: &Signature<'_>,
+) -> Result<Integration, WriteError> {
+    while let Some(operation) = rebase.next() {
+        operation.map_err(error)?;
+        let index = git.index().map_err(error)?;
+        if index.has_conflicts() {
+            return Ok(Integration::Conflicts(conflicts(&index)?));
         }
+        commit_step(rebase, signature)?;
     }
-    paths.sort();
-    paths.dedup();
-    Ok(paths)
+    rebase.finish(Some(signature)).map_err(error)?;
+    Ok(Integration::Completed)
+}
+
+/// Drops `#` comment lines and surrounding blank lines, as `git commit`
+/// does with the default cleanup mode.
+fn strip_comments(message: &str) -> String {
+    let kept: Vec<&str> = message
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect();
+    kept.join("\n").trim().to_owned()
+}
+
+/// Commits the current step of a rebase.
+fn commit_step(rebase: &mut Rebase<'_>, signature: &Signature<'_>) -> Result<(), WriteError> {
+    match rebase.commit(None, signature, None) {
+        Ok(_) => Ok(()),
+        // The change is already upstream; there is nothing to commit.
+        Err(err) if err.code() == ErrorCode::Applied => Ok(()),
+        Err(err) => Err(error(err)),
+    }
 }

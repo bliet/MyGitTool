@@ -309,6 +309,41 @@ impl RepositoryReader for GitRepositoryReader {
         })
     }
 
+    fn changed_paths(
+        &self,
+        repo: &RepositoryInfo,
+        from: CommitId,
+        to: CommitId,
+    ) -> Result<Vec<String>, ReadError> {
+        let git = open(repo)?;
+        let tree = |id: CommitId| {
+            git.find_commit(map::oid(id))
+                .and_then(|commit| commit.tree())
+                .map_err(map::error)
+        };
+        let diff = git
+            .diff_tree_to_tree(Some(&tree(from)?), Some(&tree(to)?), None)
+            .map_err(map::error)?;
+        let mut paths: Vec<String> = diff
+            .deltas()
+            .flat_map(|delta| [delta.old_file().path_bytes(), delta.new_file().path_bytes()])
+            .flatten()
+            .map(map::text)
+            .collect();
+        paths.sort();
+        paths.dedup();
+        Ok(paths)
+    }
+
+    fn conflicted_files(&self, repo: &RepositoryInfo) -> Result<Vec<String>, ReadError> {
+        let git = open(repo)?;
+        if git.is_bare() {
+            return Ok(Vec::new());
+        }
+        let index = git.index().map_err(map::error)?;
+        map::conflict_paths(&index).map_err(map::error)
+    }
+
     fn pull_config(&self, repo: &RepositoryInfo, branch: &str) -> Result<PullConfig, ReadError> {
         let git = open(repo)?;
         let config = git.config().map_err(map::error)?;

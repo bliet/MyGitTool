@@ -1,37 +1,64 @@
-use application::{FetchTarget, PullOutcome};
+use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
 use domain::{CommitId, OngoingOperation, Progress};
 use ui::view::branch_tree::{BranchItem, remote_key, remote_of_folder};
 use ui::view::operation::{
-    RemoteAction, branch_menu, conflict_title, progress_fraction, progress_text, pull_summary,
-    remote_menu, running_label,
+    Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
+    integration_summary, ongoing_text, progress_fraction, progress_text, remote_menu,
+    running_label,
 };
 
-fn branch(name: &str, is_head: bool, remote: Option<&str>) -> BranchItem {
+fn tip() -> CommitId {
+    CommitId::from_bytes([1; 20])
+}
+
+fn local(name: &str, is_head: bool) -> BranchItem {
     BranchItem {
         label: name.rsplit('/').next().unwrap().into(),
         name: name.into(),
         refname: format!("refs/heads/{name}"),
-        target: CommitId::from_bytes([1; 20]),
+        target: tip(),
         is_head,
         ahead: None,
         behind: None,
         upstream_gone: false,
-        remote: remote.map(str::to_owned),
+        remote: None,
     }
 }
 
-fn actions(entries: Vec<ui::view::operation::MenuEntry>) -> Vec<RemoteAction> {
+fn remote(remote: &str, name: &str) -> BranchItem {
+    BranchItem {
+        label: name.rsplit('/').next().unwrap().into(),
+        name: format!("{remote}/{name}"),
+        refname: format!("refs/remotes/{remote}/{name}"),
+        target: tip(),
+        is_head: false,
+        ahead: None,
+        behind: None,
+        upstream_gone: false,
+        remote: Some(remote.into()),
+    }
+}
+
+fn actions(entries: Vec<MenuEntry>) -> Vec<Action> {
     entries.into_iter().map(|e| e.action).collect()
 }
 
+fn labels(entries: &[MenuEntry]) -> Vec<&str> {
+    entries.iter().map(|e| e.label.as_str()).collect()
+}
+
 #[test]
-fn the_current_branch_can_fetch_pull_and_push() {
+fn the_current_branch_can_be_branched_from_fetched_pulled_and_pushed() {
     assert_eq!(
-        actions(branch_menu(&branch("main", true, None))),
+        actions(branch_menu(&local("main", true))),
         [
-            RemoteAction::Fetch(FetchTarget::Branch("main".into())),
-            RemoteAction::Pull,
-            RemoteAction::Push {
+            Action::CreateBranch {
+                start: tip(),
+                from: "main".into()
+            },
+            Action::Fetch(FetchTarget::Branch("main".into())),
+            Action::Pull,
+            Action::Push {
                 branch: "main".into()
             },
         ]
@@ -39,23 +66,90 @@ fn the_current_branch_can_fetch_pull_and_push() {
 }
 
 #[test]
-fn other_local_branches_cannot_pull() {
-    let entries = actions(branch_menu(&branch("feature/x", false, None)));
-    assert!(!entries.contains(&RemoteAction::Pull));
-    assert!(entries.contains(&RemoteAction::Push {
-        branch: "feature/x".into()
-    }));
+fn another_local_branch_offers_every_branch_operation_but_pull() {
+    let entries = branch_menu(&local("feature/x", false));
+    assert_eq!(
+        labels(&entries),
+        [
+            "Check out feature/x",
+            "Merge feature/x into current",
+            "Rebase current onto feature/x",
+            "Create branch from here…",
+            "Fetch upstream",
+            "Push feature/x",
+            "Delete feature/x",
+        ]
+    );
+    let actions = actions(entries);
+    assert_eq!(
+        actions[0],
+        Action::Checkout(CheckoutTarget::Local("feature/x".into()))
+    );
+    assert_eq!(
+        actions[1],
+        Action::Merge {
+            refname: "refs/heads/feature/x".into(),
+            name: "feature/x".into()
+        }
+    );
+    assert!(!actions.contains(&Action::Pull));
 }
 
 #[test]
-fn remote_branches_and_remotes_fetch_their_remote() {
-    let fetch_origin = [RemoteAction::Fetch(FetchTarget::Remote("origin".into()))];
+fn a_remote_branch_checks_out_as_a_tracking_branch_and_deletes_on_the_server() {
+    let entries = branch_menu(&remote("origin", "feature/x"));
     assert_eq!(
-        actions(branch_menu(&branch("origin/main", false, Some("origin")))),
-        fetch_origin
+        labels(&entries),
+        [
+            "Check out as feature/x",
+            "Merge origin/feature/x into current",
+            "Rebase current onto origin/feature/x",
+            "Create branch from here…",
+            "Fetch origin",
+            "Delete feature/x from origin…",
+        ]
     );
-    assert_eq!(actions(remote_menu("origin")), fetch_origin);
+    let actions = actions(entries);
+    assert_eq!(
+        actions[0],
+        Action::Checkout(CheckoutTarget::Remote {
+            remote: "origin".into(),
+            branch: "feature/x".into()
+        })
+    );
+    assert_eq!(
+        actions[5],
+        Action::DeleteRemote {
+            remote: "origin".into(),
+            branch: "feature/x".into()
+        }
+    );
+}
+
+#[test]
+fn menus_group_entries_with_separators() {
+    let separated: Vec<bool> = branch_menu(&local("x", false))
+        .iter()
+        .map(|e| e.separated)
+        .collect();
+    assert_eq!(separated, [false, false, false, true, true, false, true]);
+}
+
+#[test]
+fn remotes_fetch_and_commits_branch() {
+    assert_eq!(
+        actions(remote_menu("origin")),
+        [Action::Fetch(FetchTarget::Remote("origin".into()))]
+    );
     assert_eq!(remote_menu("origin")[0].label, "Fetch origin");
+    let id = CommitId::from_bytes([0xab; 20]);
+    assert_eq!(
+        actions(commit_menu(id)),
+        [Action::CreateBranch {
+            start: id,
+            from: "abababa".into()
+        }]
+    );
 }
 
 #[test]
@@ -67,20 +161,50 @@ fn only_top_level_remote_folders_are_remotes() {
 
 #[test]
 fn running_labels_name_what_runs() {
-    assert_eq!(
-        running_label(&RemoteAction::Fetch(FetchTarget::All)),
-        "Fetching all remotes…"
-    );
-    assert_eq!(
-        running_label(&RemoteAction::Fetch(FetchTarget::Remote("origin".into()))),
-        "Fetching origin…"
-    );
-    assert_eq!(
-        running_label(&RemoteAction::Push {
-            branch: "main".into()
-        }),
-        "Pushing main…"
-    );
+    let cases = [
+        (Action::Fetch(FetchTarget::All), "Fetching all remotes…"),
+        (
+            Action::Fetch(FetchTarget::Remote("origin".into())),
+            "Fetching origin…",
+        ),
+        (
+            Action::Push {
+                branch: "main".into(),
+            },
+            "Pushing main…",
+        ),
+        (
+            Action::Checkout(CheckoutTarget::Remote {
+                remote: "origin".into(),
+                branch: "x".into(),
+            }),
+            "Checking out x…",
+        ),
+        (
+            Action::Merge {
+                refname: "refs/heads/x".into(),
+                name: "x".into(),
+            },
+            "Merging x…",
+        ),
+        (
+            Action::Rebase {
+                refname: "refs/heads/x".into(),
+                name: "x".into(),
+            },
+            "Rebasing onto x…",
+        ),
+        (
+            Action::DeleteRemote {
+                remote: "origin".into(),
+                branch: "x".into(),
+            },
+            "Deleting x from origin…",
+        ),
+    ];
+    for (action, label) in cases {
+        assert_eq!(running_label(&action), label);
+    }
 }
 
 #[test]
@@ -106,15 +230,65 @@ fn progress_is_described_and_measured() {
 }
 
 #[test]
-fn pull_summaries() {
+fn integration_summaries_and_conflict_titles() {
     let id = CommitId::from_bytes([0xab; 20]);
-    assert_eq!(pull_summary(&PullOutcome::UpToDate), "Already up to date");
     assert_eq!(
-        pull_summary(&PullOutcome::FastForwarded { to: id }),
+        integration_summary(&IntegrationOutcome::UpToDate),
+        "Already up to date"
+    );
+    assert_eq!(
+        integration_summary(&IntegrationOutcome::FastForwarded { to: id }),
         "Fast-forwarded to abababa"
     );
     assert_eq!(
-        conflict_title(OngoingOperation::Rebase),
+        integration_summary(&IntegrationOutcome::Merged),
+        "Merge completed"
+    );
+    assert_eq!(
+        conflict_title("Pull", OngoingOperation::Rebase),
         "Pull stopped: the rebase has conflicts"
     );
+    assert_eq!(
+        conflict_title("Merge", OngoingOperation::Merge),
+        "Merge stopped with conflicts"
+    );
+}
+
+#[test]
+fn a_blocked_switch_names_the_files_it_would_overwrite() {
+    let (title, intro) = dirty_texts("Checkout");
+    assert_eq!(title, "Checkout would overwrite local changes");
+    assert!(intro.contains("would overwrite"));
+    let (title, _) = dirty_texts("Pull");
+    assert_eq!(title, "Pull needs a clean work tree");
+}
+
+#[test]
+fn the_banner_explains_the_ongoing_operation() {
+    let merge = |conflicts: &[&str]| OngoingState {
+        operation: OngoingOperation::Merge,
+        conflicts: conflicts.iter().map(|c| c.to_string()).collect(),
+    };
+    assert_eq!(
+        ongoing_text(&merge(&["a.txt"])),
+        "A merge is in progress. 1 file has conflicts: a.txt"
+    );
+    assert_eq!(
+        ongoing_text(&merge(&["a.txt", "b.txt"])),
+        "A merge is in progress. 2 files have conflicts: a.txt, b.txt"
+    );
+    assert_eq!(
+        ongoing_text(&merge(&[])),
+        "A merge is in progress. All conflicts are resolved."
+    );
+    let picking = OngoingState {
+        operation: OngoingOperation::CherryPick,
+        conflicts: vec![],
+    };
+    assert_eq!(
+        ongoing_text(&picking),
+        "A cherry-pick is in progress. Finish or abort it with Git."
+    );
+    assert!(can_continue(OngoingOperation::Rebase));
+    assert!(!can_continue(OngoingOperation::Revert));
 }

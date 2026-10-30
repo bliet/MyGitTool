@@ -1,9 +1,10 @@
 //! The status strip, dialogs and context menu of the remote operations.
 
 use super::operations::{Dialog, Operations, dialog_title};
-use crate::view::operation::{progress_fraction, progress_text};
+use super::session::Session;
+use crate::view::operation::{can_continue, ongoing_text, progress_fraction, progress_text};
 use dioxus::prelude::*;
-use domain::{Credential, CredentialRequest};
+use domain::{CommitId, Credential, CredentialRequest, validate_branch_name};
 
 /// Shows the running operation with its progress, or the last result.
 #[component]
@@ -68,19 +69,51 @@ pub fn DialogHost() -> Element {
                     Dialog::SetUpstream { branch, remotes } => rsx! {
                         UpstreamForm { branch, remotes }
                     },
-                    Dialog::DirtyWorkTree { files, .. } => rsx! {
-                        p { "Commit or stash the changes in these files first:" }
+                    Dialog::DirtyWorkTree { intro, files, .. } => rsx! {
+                        p { "{intro}" }
                         FileList { files }
                         div { class: "dialog-buttons",
                             button { class: "primary", onclick: move |_| operations.dismiss(), "OK" }
                         }
                     },
-                    Dialog::Conflicts { operation, files } => rsx! {
+                    Dialog::CreateBranch { start, error, .. } => rsx! {
+                        CreateBranchForm { start, error }
+                    },
+                    Dialog::ConfirmDeleteUnmerged { branch, commits } => rsx! {
+                        p {
+                            if commits == 1 {
+                                "{branch} has 1 commit that is not in the current branch. "
+                            } else {
+                                "{branch} has {commits} commits that are not in the current branch. "
+                            }
+                            "Deleting the branch may lose them."
+                        }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary danger",
+                                onclick: move |_| operations.delete_local(branch.clone(), true),
+                                "Delete anyway"
+                            }
+                        }
+                    },
+                    Dialog::ConfirmDeleteRemote { remote, branch } => rsx! {
+                        p { "This deletes the branch on the server for everyone who uses {remote}." }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary danger",
+                                onclick: move |_| operations.delete_remote(remote.clone(), branch.clone()),
+                                "Delete from {remote}"
+                            }
+                        }
+                    },
+                    Dialog::Conflicts { operation, files, .. } => rsx! {
                         p { "These files have conflicts:" }
                         FileList { files }
                         p { class: "muted",
-                            "Abort the {operation} to return to the state before the pull, or leave it "
-                            "and resolve the conflicts with another tool."
+                            "Abort the {operation} to return to the state before it, or leave it, "
+                            "resolve the conflicts with another tool, and then continue it here."
                         }
                         div { class: "dialog-buttons",
                             button { onclick: move |_| operations.leave_conflicts(), "Leave for external resolution" }
@@ -88,6 +121,95 @@ pub fn DialogHost() -> Element {
                         }
                     },
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn CreateBranchForm(start: CommitId, error: Option<String>) -> Element {
+    let operations = use_context::<Operations>();
+    let mut name = use_signal(String::new);
+    let mut checkout = use_signal(|| true);
+    let typed = name.read().trim().to_owned();
+    // The format is checked as the user types; whether the name is taken is
+    // checked when creating.
+    let invalid = if typed.is_empty() {
+        None
+    } else {
+        validate_branch_name(&typed).err().map(|e| e.to_string())
+    };
+    let message = invalid.clone().or(error);
+    let has_message = message.is_some();
+    let ready = !typed.is_empty() && invalid.is_none();
+    let submit = move || {
+        let typed = name.peek().trim().to_owned();
+        if !typed.is_empty() && validate_branch_name(&typed).is_ok() {
+            operations.create_branch(typed, start, *checkout.peek());
+        }
+    };
+
+    rsx! {
+        div { class: "dialog-fields",
+            label { "Branch name"
+                input {
+                    r#type: "text",
+                    value: "{name}",
+                    placeholder: "feature/my-change",
+                    spellcheck: "false",
+                    aria_invalid: "{has_message}",
+                    oninput: move |e| name.set(e.value()),
+                    onkeydown: move |e: KeyboardEvent| {
+                        if e.key() == Key::Enter {
+                            submit();
+                        }
+                    },
+                    onmounted: move |e| async move { let _ = e.set_focus(true).await; },
+                }
+            }
+            if let Some(message) = message {
+                p { class: "field-error", role: "alert", "{message}" }
+            }
+            label { class: "checkbox",
+                input {
+                    r#type: "checkbox",
+                    checked: checkout(),
+                    onchange: move |e| checkout.set(e.checked()),
+                }
+                "Check out the new branch"
+            }
+        }
+        div { class: "dialog-buttons",
+            button { onclick: move |_| operations.dismiss(), "Cancel" }
+            button { class: "primary", disabled: !ready, onclick: move |_| submit(), "Create branch" }
+        }
+    }
+}
+
+/// Shown while a merge, rebase or similar is in progress, e.g. after
+/// conflicts or when started outside the app.
+#[component]
+pub fn OngoingBanner() -> Element {
+    let session = use_context::<Session>();
+    let operations = use_context::<Operations>();
+    let Some(state) = session.ongoing.read().clone() else {
+        return rsx! {};
+    };
+    let text = ongoing_text(&state);
+    let operation = state.operation;
+    let busy = operations.is_running();
+    rsx! {
+        div { class: "ongoing-banner", role: "status",
+            span { class: "ongoing-icon", "⚠" }
+            span { class: "message selectable", "{text}" }
+            if can_continue(operation) {
+                button {
+                    disabled: busy || !state.conflicts.is_empty(),
+                    title: if state.conflicts.is_empty() { "Commit the result and go on" } else { "Resolve and stage the conflicts first" },
+                    onclick: move |_| operations.resume(),
+                    "Continue {operation}"
+                }
+                button { disabled: busy, onclick: move |_| operations.abort(), "Abort {operation}" }
             }
         }
     }
@@ -222,6 +344,9 @@ pub fn ContextMenu() -> Element {
         }
         ul { class: "context-menu", role: "menu", style: "left: {menu.x}px; top: {menu.y}px;",
             for entry in menu.entries {
+                if entry.separated {
+                    li { class: "separator", role: "separator" }
+                }
                 li {
                     role: "menuitem",
                     class: if busy { "disabled" } else { "" },

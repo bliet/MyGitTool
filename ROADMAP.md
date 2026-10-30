@@ -47,14 +47,14 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 ## M4: Branch operations
 
-- [ ] Dirty-work-tree guard: block the operation and list the dirty files. A checkout that doesn't touch modified files is allowed.
-- [ ] **Checkout** a local branch. On a remote branch, create or switch to the local tracking branch.
-- [ ] **Create branch** from a branch or a commit (name dialog with validation)
-- [ ] **Delete branch.** Local: refuse an unmerged branch unless the user confirms. Remote: delete it on the server after a confirm dialog.
-- [ ] **Merge branch into current branch.** Fast-forward when possible, otherwise create a merge commit.
-- [ ] **Rebase current branch onto this one**
-- [ ] Conflict handling for merge, rebase and pull: list the conflicting files, then offer *Abort* or *Leave for external resolution*
-- [ ] A banner when the repo is mid-merge or mid-rebase, with Abort and Continue buttons
+- [x] Dirty-work-tree guard: block the operation and list the dirty files. A checkout that doesn't touch modified files is allowed.
+- [x] **Checkout** a local branch. On a remote branch, create or switch to the local tracking branch.
+- [x] **Create branch** from a branch or a commit (name dialog with validation)
+- [x] **Delete branch.** Local: refuse an unmerged branch unless the user confirms. Remote: delete it on the server after a confirm dialog.
+- [x] **Merge branch into current branch.** Fast-forward when possible, otherwise create a merge commit.
+- [x] **Rebase current branch onto this one**
+- [x] Conflict handling for merge, rebase and pull: list the conflicting files, then offer *Abort* or *Leave for external resolution*
+- [x] A banner when the repo is mid-merge or mid-rebase, with Abort and Continue buttons
 
 ## M5: Polish
 

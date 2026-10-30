@@ -54,3 +54,18 @@ pub fn change_kind(delta: Delta) -> Option<ChangeKind> {
         Delta::Unmodified | Delta::Ignored | Delta::Unreadable => None,
     }
 }
+
+/// The paths with conflicts in `index`, sorted.
+pub fn conflict_paths(index: &git2::Index) -> Result<Vec<String>, git2::Error> {
+    let mut paths = Vec::new();
+    for conflict in index.conflicts()? {
+        let conflict = conflict?;
+        let entry = conflict.our.or(conflict.their).or(conflict.ancestor);
+        if let Some(entry) = entry {
+            paths.push(text(&entry.path));
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}

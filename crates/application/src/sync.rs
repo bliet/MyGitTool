@@ -1,15 +1,18 @@
-//! Fetch, pull and push, and aborting a pull that stopped with conflicts.
+//! Fetch, pull and push, and aborting a merge or rebase that stopped with
+//! conflicts.
 
 use crate::ports::{
     CredentialProvider, Integration, ProgressReporter, ReadError, RemoteError, RemoteOperations,
     RepositoryReader, RepositoryWriter, WriteError,
 };
-use domain::{CommitId, DirtyWorkTree, FastForward, Head, OngoingOperation, RepositoryInfo};
+use domain::{
+    CommitId, DirtyWorkTree, FastForward, Head, InvalidBranchName, OngoingOperation, RepositoryInfo,
+};
 use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum SyncError {
+pub enum OperationError {
     #[error(transparent)]
     Read(#[from] ReadError),
     #[error(transparent)]
@@ -30,6 +33,24 @@ pub enum SyncError {
     UpstreamGone(String),
     #[error("the repository has no remotes")]
     NoRemotes,
+    #[error("invalid branch name: {0}")]
+    InvalidBranchName(#[from] InvalidBranchName),
+    #[error("a branch named {0} already exists")]
+    BranchExists(String),
+    #[error("the branch {0} does not exist")]
+    BranchNotFound(String),
+    #[error("{0} is checked out; switch to another branch to delete it")]
+    CannotDeleteCurrent(String),
+    /// Deleting the branch would lose `commits` commits that the current
+    /// branch does not contain.
+    #[error("{branch} has {commits} commit(s) that are not merged into the current branch")]
+    Unmerged { branch: String, commits: usize },
+    #[error("there is no merge or rebase in progress")]
+    NothingInProgress,
+    #[error("the app cannot continue a {0}; finish it with Git")]
+    CannotContinue(OngoingOperation),
+    #[error("resolve and stage these files first: {}", .0.join(", "))]
+    UnresolvedConflicts(Vec<String>),
 }
 
 /// What to fetch.
@@ -59,7 +80,7 @@ impl Fetch {
         &self,
         repo: &RepositoryInfo,
         target: &FetchTarget,
-    ) -> Result<Vec<String>, SyncError> {
+    ) -> Result<Vec<String>, OperationError> {
         Ok(match target {
             FetchTarget::All => {
                 let remotes: Vec<_> = self
@@ -69,14 +90,14 @@ impl Fetch {
                     .map(|r| r.name)
                     .collect();
                 if remotes.is_empty() {
-                    return Err(SyncError::NoRemotes);
+                    return Err(OperationError::NoRemotes);
                 }
                 remotes
             }
             FetchTarget::Remote(name) => vec![name.clone()],
             FetchTarget::Branch(branch) => match self.reader.tracking(repo, branch)? {
                 Some(tracking) => vec![tracking.remote],
-                None => return Err(SyncError::NoUpstream(branch.clone())),
+                None => return Err(OperationError::NoUpstream(branch.clone())),
             },
         })
     }
@@ -89,7 +110,7 @@ impl Fetch {
         target: &FetchTarget,
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
-    ) -> Result<Vec<String>, SyncError> {
+    ) -> Result<Vec<String>, OperationError> {
         let remotes = self.remotes(repo, target)?;
         for remote in &remotes {
             self.remote.fetch(repo, remote, progress, credentials)?;
@@ -98,9 +119,9 @@ impl Fetch {
     }
 }
 
-/// What a pull did.
+/// What a pull, merge, rebase or continue did.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PullOutcome {
+pub enum IntegrationOutcome {
     UpToDate,
     FastForwarded {
         to: CommitId,
@@ -142,17 +163,17 @@ impl Pull {
         repo: &RepositoryInfo,
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
-    ) -> Result<PullOutcome, SyncError> {
+    ) -> Result<IntegrationOutcome, OperationError> {
         let Head::Branch { name, target: head } = self.reader.head(repo)? else {
-            return Err(SyncError::NoCurrentBranch);
+            return Err(OperationError::NoCurrentBranch);
         };
         if let Some(operation) = self.reader.ongoing_operation(repo)? {
-            return Err(SyncError::OperationInProgress(operation));
+            return Err(OperationError::OperationInProgress(operation));
         }
         let tracking = self
             .reader
             .tracking(repo, &name)?
-            .ok_or_else(|| SyncError::NoUpstream(name.clone()))?;
+            .ok_or_else(|| OperationError::NoUpstream(name.clone()))?;
         let files = self.reader.dirty_files(repo)?;
         if !files.is_empty() {
             return Err(DirtyWorkTree { files }.into());
@@ -163,10 +184,10 @@ impl Pull {
         let upstream = self
             .reader
             .resolve(repo, &tracking.tracking_ref)?
-            .ok_or_else(|| SyncError::UpstreamGone(tracking.merge_ref.clone()))?;
+            .ok_or_else(|| OperationError::UpstreamGone(tracking.merge_ref.clone()))?;
         let (ahead, behind) = self.reader.ahead_behind(repo, head, upstream)?;
         if behind == 0 {
-            return Ok(PullOutcome::UpToDate);
+            return Ok(IntegrationOutcome::UpToDate);
         }
 
         let config = self.reader.pull_config(repo, &name)?;
@@ -174,16 +195,16 @@ impl Pull {
             ahead == 0 && (config.rebase || config.fast_forward != FastForward::Never);
         if fast_forward {
             self.writer.fast_forward(repo, &name, upstream)?;
-            return Ok(PullOutcome::FastForwarded { to: upstream });
+            return Ok(IntegrationOutcome::FastForwarded { to: upstream });
         }
         if ahead > 0 && config.fast_forward == FastForward::Only {
-            return Err(SyncError::NotFastForward(name));
+            return Err(OperationError::NotFastForward(name));
         }
 
         if config.rebase {
             return Ok(match self.writer.rebase(repo, upstream)? {
-                Integration::Completed => PullOutcome::Rebased,
-                Integration::Conflicts(files) => PullOutcome::Conflicts {
+                Integration::Completed => IntegrationOutcome::Rebased,
+                Integration::Conflicts(files) => IntegrationOutcome::Conflicts {
                     operation: OngoingOperation::Rebase,
                     files,
                 },
@@ -191,8 +212,8 @@ impl Pull {
         }
         let message = self.merge_message(repo, &tracking.remote, &tracking.merge_ref)?;
         Ok(match self.writer.merge(repo, upstream, &message)? {
-            Integration::Completed => PullOutcome::Merged,
-            Integration::Conflicts(files) => PullOutcome::Conflicts {
+            Integration::Completed => IntegrationOutcome::Merged,
+            Integration::Conflicts(files) => IntegrationOutcome::Conflicts {
                 operation: OngoingOperation::Merge,
                 files,
             },
@@ -205,7 +226,7 @@ impl Pull {
         repo: &RepositoryInfo,
         remote: &str,
         merge_ref: &str,
-    ) -> Result<String, SyncError> {
+    ) -> Result<String, OperationError> {
         let branch = merge_ref.strip_prefix("refs/heads/").unwrap_or(merge_ref);
         let source = self
             .reader
@@ -263,14 +284,14 @@ impl Push {
     }
 
     /// The current branch, which the toolbar pushes.
-    pub fn current_branch(&self, repo: &RepositoryInfo) -> Result<String, SyncError> {
+    pub fn current_branch(&self, repo: &RepositoryInfo) -> Result<String, OperationError> {
         match self.reader.head(repo)? {
             Head::Branch { name, .. } => Ok(name),
-            Head::Detached(_) | Head::Unborn { .. } => Err(SyncError::NoCurrentBranch),
+            Head::Detached(_) | Head::Unborn { .. } => Err(OperationError::NoCurrentBranch),
         }
     }
 
-    pub fn plan(&self, repo: &RepositoryInfo, branch: &str) -> Result<PushPlan, SyncError> {
+    pub fn plan(&self, repo: &RepositoryInfo, branch: &str) -> Result<PushPlan, OperationError> {
         if let Some(tracking) = self.reader.tracking(repo, branch)? {
             return Ok(PushPlan::Upstream(PushDestination {
                 remote: tracking.remote,
@@ -285,7 +306,7 @@ impl Push {
             .map(|r| r.name)
             .collect();
         if remotes.is_empty() {
-            return Err(SyncError::NoRemotes);
+            return Err(OperationError::NoRemotes);
         }
         if let Some(origin) = remotes.iter().position(|r| r == "origin") {
             let origin = remotes.remove(origin);
@@ -314,7 +335,7 @@ impl Push {
         destination: &PushDestination,
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
-    ) -> Result<(), SyncError> {
+    ) -> Result<(), OperationError> {
         self.remote.push(
             repo,
             branch,
@@ -331,7 +352,7 @@ impl Push {
     }
 }
 
-/// Aborts the merge or rebase a pull left in progress.
+/// Aborts the merge or rebase in progress.
 #[derive(Clone)]
 pub struct AbortOperation {
     writer: Arc<dyn RepositoryWriter>,
@@ -342,7 +363,7 @@ impl AbortOperation {
         Self { writer }
     }
 
-    pub fn abort(&self, repo: &RepositoryInfo) -> Result<(), SyncError> {
+    pub fn abort(&self, repo: &RepositoryInfo) -> Result<(), OperationError> {
         Ok(self.writer.abort(repo)?)
     }
 }

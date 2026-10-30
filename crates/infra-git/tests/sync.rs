@@ -3,8 +3,8 @@
 mod common;
 
 use application::{
-    CredentialProvider, Fetch, FetchTarget, ProgressReporter, Pull, PullOutcome, Push, PushPlan,
-    RemoteError, RepositoryReader, SyncError,
+    CredentialProvider, Fetch, FetchTarget, IntegrationOutcome, OperationError, ProgressReporter,
+    Pull, Push, PushPlan, RemoteError, RepositoryReader,
 };
 use common::TestRepo;
 use domain::{
@@ -51,12 +51,12 @@ fn push_case() -> Push {
     )
 }
 
-fn pull(repo: &TestRepo) -> Result<PullOutcome, SyncError> {
+fn pull(repo: &TestRepo) -> Result<IntegrationOutcome, OperationError> {
     pull_case().pull(&info(repo), &Silent, &Silent)
 }
 
 /// Pushes the current branch, setting `origin` as its upstream if needed.
-fn push(repo: &TestRepo) -> Result<(), SyncError> {
+fn push(repo: &TestRepo) -> Result<(), OperationError> {
     let push = push_case();
     let branch = push.current_branch(&info(repo))?;
     let destination = match push.plan(&info(repo), &branch)? {
@@ -125,7 +125,10 @@ fn push_never_overwrites_commits_on_the_remote() {
     let local = local.commit("a.txt", "ours\n");
     let result = push(&local);
     assert!(
-        matches!(result, Err(SyncError::Remote(RemoteError::Rejected { .. }))),
+        matches!(
+            result,
+            Err(OperationError::Remote(RemoteError::Rejected { .. }))
+        ),
         "got {result:?}"
     );
     assert_eq!(ref_target(&remote, "refs/heads/main"), Some(theirs));
@@ -178,7 +181,9 @@ fn fetch_of_an_unknown_remote_fails() {
     );
     assert_eq!(
         result,
-        Err(SyncError::Remote(RemoteError::UnknownRemote("nope".into())))
+        Err(OperationError::Remote(RemoteError::UnknownRemote(
+            "nope".into()
+        )))
     );
 }
 
@@ -187,7 +192,7 @@ fn fetch_of_an_unknown_remote_fails() {
 #[test]
 fn pull_without_new_commits_is_up_to_date() {
     let (_remote, local) = remote_and_local();
-    assert_eq!(pull(&local), Ok(PullOutcome::UpToDate));
+    assert_eq!(pull(&local), Ok(IntegrationOutcome::UpToDate));
 }
 
 #[test]
@@ -196,7 +201,7 @@ fn pull_fast_forwards_branch_and_work_tree() {
     let theirs = push_from_elsewhere(&remote, "b.txt", "from elsewhere\n");
     assert_eq!(
         pull(&local),
-        Ok(PullOutcome::FastForwarded { to: id(theirs) })
+        Ok(IntegrationOutcome::FastForwarded { to: id(theirs) })
     );
     assert_eq!(local.head(), theirs);
     assert_eq!(
@@ -212,7 +217,7 @@ fn diverged_pull_creates_a_merge_commit() {
     let theirs = push_from_elsewhere(&remote, "b.txt", "theirs\n");
     let local = local.commit("c.txt", "ours\n");
     let ours = local.head();
-    assert_eq!(pull(&local), Ok(PullOutcome::Merged));
+    assert_eq!(pull(&local), Ok(IntegrationOutcome::Merged));
 
     let merge = local.git().find_commit(local.head()).unwrap();
     let parents: Vec<_> = merge.parent_ids().collect();
@@ -235,7 +240,7 @@ fn diverged_pull_rebases_when_pull_rebase_is_set() {
     let local = local
         .config("pull.rebase", "true")
         .commit("c.txt", "ours\n");
-    assert_eq!(pull(&local), Ok(PullOutcome::Rebased));
+    assert_eq!(pull(&local), Ok(IntegrationOutcome::Rebased));
 
     let head = local.git().find_commit(local.head()).unwrap();
     assert_eq!(head.parent_ids().collect::<Vec<_>>(), [theirs]);
@@ -253,7 +258,7 @@ fn merge_conflicts_are_reported_and_can_be_aborted() {
 
     assert_eq!(
         pull(&local),
-        Ok(PullOutcome::Conflicts {
+        Ok(IntegrationOutcome::Conflicts {
             operation: OngoingOperation::Merge,
             files: vec!["a.txt".into()]
         })
@@ -286,7 +291,7 @@ fn rebase_conflicts_are_reported_and_can_be_aborted() {
 
     assert_eq!(
         pull(&local),
-        Ok(PullOutcome::Conflicts {
+        Ok(IntegrationOutcome::Conflicts {
             operation: OngoingOperation::Rebase,
             files: vec!["a.txt".into()]
         })
@@ -318,7 +323,7 @@ fn pull_refuses_uncommitted_changes_but_ignores_untracked_files() {
     let local = local.write("untracked.txt", "x").write("a.txt", "edited\n");
     assert_eq!(
         pull(&local),
-        Err(SyncError::DirtyWorkTree(DirtyWorkTree {
+        Err(OperationError::DirtyWorkTree(DirtyWorkTree {
             files: vec!["a.txt".into()]
         }))
     );
@@ -330,7 +335,7 @@ fn pull_refuses_uncommitted_changes_but_ignores_untracked_files() {
     let local = local.write("a.txt", "base\n");
     assert!(matches!(
         pull(&local),
-        Ok(PullOutcome::FastForwarded { .. })
+        Ok(IntegrationOutcome::FastForwarded { .. })
     ));
 }
 

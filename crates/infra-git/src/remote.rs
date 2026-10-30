@@ -2,8 +2,8 @@ use crate::credentials::{AllowedCredentials, Attempt, CredentialChain};
 use application::{CredentialProvider, ProgressReporter, RemoteError, RemoteOperations};
 use domain::{Progress, RepositoryInfo};
 use git2::{
-    Cred, CredentialType, ErrorClass, ErrorCode, FetchOptions, Progress as Stats, PushOptions,
-    Remote, RemoteCallbacks, Repository,
+    Cred, CredentialType, Direction, ErrorClass, ErrorCode, FetchOptions, Progress as Stats,
+    PushOptions, Remote, RemoteCallbacks, Repository,
 };
 use std::cell::{Cell, RefCell};
 
@@ -53,6 +53,60 @@ impl RemoteOperations for GitRemoteOperations {
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
     ) -> Result<(), RemoteError> {
+        // No leading `+`: the remote only accepts a fast-forward.
+        let refspec = format!("refs/heads/{branch}:{remote_ref}");
+        push_refspec(repo, remote, &refspec, remote_ref, progress, credentials)
+    }
+
+    fn delete_branch(
+        &self,
+        repo: &RepositoryInfo,
+        remote: &str,
+        remote_ref: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError> {
+        push_refspec(
+            repo,
+            remote,
+            &format!(":{remote_ref}"),
+            remote_ref,
+            progress,
+            credentials,
+        )?;
+        // Pushing a deletion usually prunes the remote-tracking branch, but
+        // not with every transport; make sure it is gone.
+        let git = open(repo)?;
+        let handle = find_remote(&git, remote)?;
+        for spec in handle.refspecs() {
+            if spec.direction() != Direction::Fetch || !spec.src_matches(remote_ref) {
+                continue;
+            }
+            let Ok(local) = spec.transform(remote_ref) else {
+                continue;
+            };
+            if let Ok(name) = local.as_str()
+                && let Ok(mut reference) = git.find_reference(name)
+            {
+                reference
+                    .delete()
+                    .map_err(|err| RemoteError::Backend(err.message().to_owned()))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Pushes one refspec and turns a rejection into [`RemoteError::Rejected`].
+fn push_refspec(
+    repo: &RepositoryInfo,
+    remote: &str,
+    refspec: &str,
+    remote_ref: &str,
+    progress: &dyn ProgressReporter,
+    credentials: &dyn CredentialProvider,
+) -> Result<(), RemoteError> {
+    {
         let git = open(repo)?;
         let mut handle = find_remote(&git, remote)?;
         let failure = Cell::new(None);
@@ -77,9 +131,7 @@ impl RemoteOperations for GitRemoteOperations {
         });
         let mut options = PushOptions::new();
         options.remote_callbacks(callbacks);
-        // No leading `+`: the remote only accepts a fast-forward.
-        let refspec = format!("refs/heads/{branch}:{remote_ref}");
-        match handle.push(&[refspec.as_str()], Some(&mut options)) {
+        match handle.push(&[refspec], Some(&mut options)) {
             Ok(()) => rejected.borrow_mut().take().map_or(Ok(()), Err),
             Err(err) if err.code() == ErrorCode::NotFastForward => Err(RemoteError::Rejected {
                 reference: remote_ref.to_owned(),
