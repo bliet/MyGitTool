@@ -45,7 +45,13 @@ Without one, the whole history has to be read before the first commit appears, w
 
 ## Download
 
-Packages for Linux (`.tar.gz`), Windows (`.zip`) and macOS (`.dmg`) are attached to each [GitHub release](../../releases). They are not signed, so macOS and Windows warn before the first start. On Linux, the binary needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian/Ubuntu).
+Packages for Linux (`.tar.gz`, and `.pkg.tar.zst` for Arch Linux), Windows (`.zip`) and macOS (`.dmg`) are attached to each [GitHub release](../../releases). They are not signed, so macOS and Windows warn before the first start. On Linux, the binary needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian/Ubuntu).
+
+On Arch Linux and its derivatives, install the package with pacman, which also pulls in what it needs:
+
+```sh
+sudo pacman -U mygittool-*.pkg.tar.zst
+```
 
 ## Usage
 
@@ -73,7 +79,7 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev
 
 On Arch, install `webkit2gtk-4.1` and `xdotool`. Windows and macOS need no extra packages.
 
-`scripts/package.sh` builds a release package for the current platform into `dist/`.
+`scripts/package.sh` builds a release package for the current platform into `dist/`. On Arch Linux, `scripts/package-arch.sh` builds a pacman package there (it uses your `makepkg.conf`, so the binary may be tuned to your CPU).
 
 ## Tech stack
 

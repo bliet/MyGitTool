@@ -44,10 +44,11 @@ cargo test --workspace                       # all tests
 cargo fmt --all --check                      # formatting (CI enforced)
 cargo clippy --workspace --all-targets -- -D warnings   # lints (CI enforced)
 scripts/package.sh                           # release package for this platform into dist/
+scripts/package-arch.sh                      # pacman package (.pkg.tar.zst) into dist/, on Arch
 MYGITTOOL_PERF_REPO=<big repo> cargo test --release -p infra-git --test performance -- --ignored --nocapture
 ```
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux, Windows and macOS builds and publishes them as a GitHub release.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux (including a pacman package), Windows and macOS builds and publishes them as a GitHub release.
 
 Run fmt, clippy and the tests before you consider a change done.
 

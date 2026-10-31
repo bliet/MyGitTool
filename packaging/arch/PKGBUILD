@@ -1,0 +1,50 @@
+# An Arch Linux package built from the checkout this file lives in. Use
+# scripts/package-arch.sh, which sets the version and MYGITTOOL_ROOT.
+pkgname=mygittool
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A desktop Git client that shows a repository, its branches and its remotes at a glance"
+arch=('x86_64' 'aarch64')
+url="https://github.com/bliet/MyGitTool"
+license=('MIT')
+depends=(
+  'cairo'
+  'gcc-libs'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'libsoup3'
+  'openssl'
+  'wayland'
+  'webkit2gtk-4.1'
+  'xdotool'
+  'zlib'
+)
+makedepends=('cargo')
+# The release profile already uses LTO; makepkg's would also apply to the
+# vendored C libraries.
+options=('!lto' '!debug')
+
+_root="${MYGITTOOL_ROOT:?set MYGITTOOL_ROOT to the repository root}"
+
+build() {
+  cd "$_root"
+  CARGO_TARGET_DIR="$srcdir/target" cargo build --release --locked -p app
+}
+
+check() {
+  "$srcdir/target/release/mygittool" --version
+}
+
+package() {
+  install -Dm755 "$srcdir/target/release/mygittool" "$pkgdir/usr/bin/mygittool"
+  install -Dm644 "$_root/packaging/mygittool.desktop" \
+    "$pkgdir/usr/share/applications/mygittool.desktop"
+  install -Dm644 "$_root/packaging/icons/mygittool.svg" \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/mygittool.svg"
+  install -Dm644 "$_root/packaging/icons/mygittool.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/mygittool.png"
+  install -Dm644 "$_root/README.md" "$pkgdir/usr/share/doc/mygittool/README.md"
+  install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/mygittool/LICENSE"
+}
