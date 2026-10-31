@@ -16,6 +16,8 @@ const HALF_LANE: f64 = LANE_WIDTH / 2.0;
 const HALF_ROW: f64 = ROW_HEIGHT / 2.0;
 /// The number of lane colours defined in the stylesheet.
 const COLORS: usize = 8;
+/// How long typing has to pause before the search runs.
+const SEARCH_DELAY: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// A resize of a history column in progress.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -41,7 +43,10 @@ pub fn HistoryColumn() -> Element {
     };
     let history = session.history.read();
     let uncommitted = session.work_tree.read().len();
-    let offset = usize::from(uncommitted > 0);
+    let offset = usize::from(session.has_uncommitted_row());
+    let searching = !session.search.read().trim().is_empty();
+    let mut search_input = session.search_input;
+    let typed = search_input.read().clone();
     let files_label = if uncommitted == 1 {
         "1 file".to_owned()
     } else {
@@ -73,7 +78,11 @@ pub fn HistoryColumn() -> Element {
     let graph_width = lanes as f64 * LANE_WIDTH;
     let content_height = total as f64 * ROW_HEIGHT;
     let loading = !history.is_exhausted();
-    let empty = history.is_empty() && !loading && uncommitted == 0;
+    let empty = history.is_empty() && !loading && offset == 0;
+    let matches = match history.len() {
+        1 => "1 match".to_owned(),
+        n => format!("{n} matches"),
+    };
 
     rsx! {
         section {
@@ -88,6 +97,31 @@ pub fn HistoryColumn() -> Element {
             onmouseleave: move |_| end_drag(),
             div { class: "column-header",
                 h2 { "History" }
+                input {
+                    class: "history-search",
+                    r#type: "search",
+                    placeholder: "Search message, author, hash",
+                    aria_label: "Search the history",
+                    title: "Every word has to match the summary, the author or the start of the hash. Esc clears.",
+                    spellcheck: "false",
+                    value: "{typed}",
+                    oninput: move |event| {
+                        let text = event.value();
+                        search_input.set(text.clone());
+                        // Search once typing pauses.
+                        spawn(async move {
+                            tokio::time::sleep(SEARCH_DELAY).await;
+                            if *search_input.peek() == text {
+                                session.set_search(text);
+                            }
+                        });
+                    },
+                }
+                if searching {
+                    span { class: "search-count muted",
+                        if loading { "{matches}…" } else { "{matches}" }
+                    }
+                }
                 if let Some(branch) = filter {
                     span { class: "filter-chip", title: "Esc clears the filter",
                         "Branch: {branch.name}"
@@ -104,7 +138,9 @@ pub fn HistoryColumn() -> Element {
                 p { class: "column-error", "{error}" }
             }
             if empty {
-                p { class: "placeholder", "No commits yet." }
+                p { class: "placeholder",
+                    if searching { "No matching commits." } else { "No commits yet." }
+                }
             }
             div {
                 id: HISTORY_SCROLL_ID,
@@ -196,7 +232,9 @@ pub fn HistoryColumn() -> Element {
                         }
                     }
                     if loading {
-                        div { class: "history-loading", style: "top: {content_height}px;", "Loading…" }
+                        div { class: "history-loading", style: "top: {content_height}px;",
+                            if searching { "Searching…" } else { "Loading…" }
+                        }
                     }
                 }
             }

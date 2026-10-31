@@ -74,5 +74,5 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [ ] Optional credential storage in the OS keychain
 - [ ] Tags: create, delete and push
 - [ ] Stash list in the left column
-- [ ] Search and filter the history by message, author or hash
+- [x] Search and filter the history by message, author or hash
 - [ ] Force push (`--force-with-lease`) with a confirmation

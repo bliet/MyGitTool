@@ -6,7 +6,7 @@ use crate::view::branch_tree::BranchItem;
 use crate::view::history::{HistoryList, PAGE_SIZE, ROW_HEIGHT, Selection, scroll_to_reveal};
 use crate::view::refresh::Reload;
 use application::{
-    HistoryPager, HistoryScope, OngoingState, RefIndex, RepoChanges, RepositoryRefs,
+    CommitQuery, HistoryPager, HistoryScope, OngoingState, RefIndex, RepoChanges, RepositoryRefs,
 };
 use dioxus::prelude::*;
 use domain::{CommitDetails, CommitId, FileChange, RepositoryInfo};
@@ -48,6 +48,10 @@ pub struct Session {
     pub history_loading: Signal<bool>,
     /// The branch the history is filtered to; `None` shows all refs.
     pub filter: Signal<Option<BranchItem>>,
+    /// The text in the search field, as typed.
+    pub search_input: Signal<String>,
+    /// The search the history shows, applied shortly after typing stops.
+    pub search: Signal<String>,
     pub work_tree: Signal<Vec<FileChange>>,
     /// A merge, rebase or similar in progress, e.g. after conflicts.
     pub ongoing: Signal<Option<OngoingState>>,
@@ -77,6 +81,8 @@ impl Session {
             history_error: Signal::new(None),
             history_loading: Signal::new(false),
             filter: Signal::new(None),
+            search_input: Signal::new(String::new()),
+            search: Signal::new(String::new()),
             work_tree: Signal::new(Vec::new()),
             ongoing: Signal::new(None),
             selection: Signal::new(None),
@@ -93,8 +99,9 @@ impl Session {
     }
 
     /// Whether the "Uncommitted changes" row is shown above the commits.
+    /// A search hides it.
     pub fn has_uncommitted_row(&self) -> bool {
-        !self.work_tree.read().is_empty()
+        !self.work_tree.read().is_empty() && self.search.read().trim().is_empty()
     }
 
     /// Reloads everything: refs, work tree, history and the details.
@@ -197,7 +204,12 @@ impl Session {
             Some(branch) => HistoryScope::Ref(branch.refname.clone()),
             None => HistoryScope::All,
         };
-        match blocking(move || load.open(&repo, &scope)).await {
+        let query = CommitQuery::new(&self.search.peek());
+        let opened = blocking(move || match query {
+            Some(query) => load.search(&repo, &scope, query),
+            None => load.open(&repo, &scope),
+        });
+        match opened.await {
             Ok(Ok(new_pager)) => {
                 *guard = Some(new_pager);
                 self.history.set(HistoryList::default());
@@ -244,9 +256,10 @@ impl Session {
         .await;
         match result {
             Ok((_guard, Some(Ok((rows, exhausted))))) => {
-                let appended = !rows.is_empty();
+                // A search page can be empty with more history left.
+                let more = !rows.is_empty() || !exhausted;
                 self.history.write().append(rows, exhausted);
-                appended
+                more
             }
             Ok((_guard, Some(Err(err)))) => {
                 self.history_error.set(Some(err.to_string()));
@@ -324,6 +337,23 @@ impl Session {
         self.filter.set(branch);
         self.scroll_to_top();
         spawn(async move { self.reset_history().await });
+    }
+
+    /// Shows only the commits matching `text`; an empty text ends the
+    /// search.
+    pub fn set_search(mut self, text: String) {
+        if *self.search.peek() == text {
+            return;
+        }
+        self.search.set(text);
+        self.scroll_to_top();
+        spawn(async move { self.reset_history().await });
+    }
+
+    /// Empties the search field and ends the search.
+    pub fn clear_search(mut self) {
+        self.search_input.set(String::new());
+        self.set_search(String::new());
     }
 
     fn scroll_to_row(self, row: usize) {

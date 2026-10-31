@@ -204,6 +204,20 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 .column-header h2 { border-bottom: none; }
+.history-search {
+  flex: 0 1 240px;
+  min-width: 80px;
+  margin-left: auto;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.history-search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.search-count { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .placeholder { padding: 12px; color: var(--fg-muted); margin: 0; }
 .column-error { padding: 8px 12px; margin: 0; color: var(--error-fg); background: var(--error-bg); }
 .selectable { user-select: text; -webkit-user-select: text; }

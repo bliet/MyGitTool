@@ -2,7 +2,7 @@
 //! clone of the Linux kernel) and run
 //! `cargo test --release -p infra-git --test performance -- --ignored --nocapture`.
 
-use application::{HistoryScope, LoadBranches, LoadHistory, LoadWorkTreeChanges};
+use application::{CommitQuery, HistoryScope, LoadBranches, LoadHistory, LoadWorkTreeChanges};
 use domain::{CommitId, RepositoryInfo};
 use infra_git::GitRepositoryReader;
 use std::collections::HashSet;
@@ -44,7 +44,7 @@ fn large_repository_timings() {
     );
 
     let start = Instant::now();
-    let mut pager = LoadHistory::new(reader)
+    let mut pager = LoadHistory::new(reader.clone())
         .open(&repo, &HistoryScope::All)
         .unwrap();
     let opened = start.elapsed();
@@ -74,6 +74,28 @@ fn large_repository_timings() {
     }
     eprintln!(
         "history: {rows} further rows in {:?}, at most {widest} lanes",
+        start.elapsed()
+    );
+
+    // A search for something rare looks at the whole history.
+    let start = Instant::now();
+    let mut search = LoadHistory::new(reader)
+        .search(
+            &repo,
+            &HistoryScope::All,
+            CommitQuery::new("no such text anywhere").unwrap(),
+        )
+        .unwrap();
+    let mut pages = 0;
+    let mut first_page = None;
+    while !search.is_exhausted() {
+        search.next_page(PAGE).unwrap();
+        pages += 1;
+        first_page.get_or_insert(start.elapsed());
+    }
+    eprintln!(
+        "search: first page after {:?}, whole history in {:?} ({pages} pages)",
+        first_page.unwrap_or_default(),
         start.elapsed()
     );
 }

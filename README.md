@@ -16,6 +16,7 @@ The window has three columns:
 | Tree of local and remote branches | Commit graph across all branches | Changed files (tree or flat list) |
 | Context menu: Fetch, Checkout, Pull, Push, Create / Delete Branch, Merge into current, Rebase current onto this | One-line message, author, short hash, ref badges | Full message, author / committer, dates, parents, hashes |
 | Double-click a branch to filter the history to it | "Uncommitted changes" row at the top | Double-click a file to open its diff |
+| | Search by summary, author or hash (`Esc` clears) | |
 
 **Diff window:** opens in its own window and shows the file side by side, highlighting the changed words within each line.
 

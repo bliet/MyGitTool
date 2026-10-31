@@ -14,6 +14,7 @@ mod open_repository;
 mod ports;
 mod recent_repositories;
 mod refs;
+mod search;
 mod settings;
 mod sync;
 mod watch;
@@ -27,7 +28,7 @@ pub use commit_details::GetCommitDetails;
 pub use diff::{is_binary, side_by_side};
 pub use file_diff::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
 pub use graph::{EdgeHalf, GraphEdge, GraphLayout, GraphRow};
-pub use history::{HistoryPager, HistoryRow, LoadHistory};
+pub use history::{HistoryPager, HistoryRow, LoadHistory, SEARCH_BATCH};
 pub use layout::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, RememberLayout};
 pub use open_repository::{OpenRepository, Startup};
 pub use ports::{
@@ -39,6 +40,7 @@ pub use ports::{
 };
 pub use recent_repositories::{DEFAULT_CAPACITY, RecentRepositories};
 pub use refs::{LoadBranches, RefIndex, RefLabel, RefLabelKind, RemoteBranches, RepositoryRefs};
+pub use search::CommitQuery;
 pub use settings::UserSettings;
 pub use sync::{
     AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,

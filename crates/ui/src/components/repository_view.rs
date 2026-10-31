@@ -123,6 +123,8 @@ pub fn RepositoryView(
                         } else if operations.menu.peek().is_some() {
                             let mut menu = operations.menu;
                             menu.set(None);
+                        } else if !session.search_input.peek().is_empty() {
+                            session.clear_search();
                         } else {
                             session.set_filter(None);
                         }
