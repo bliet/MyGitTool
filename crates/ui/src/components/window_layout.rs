@@ -10,18 +10,34 @@ use dioxus::desktop::tao::event::{Event, WindowEvent};
 use dioxus::desktop::{use_wry_event_handler, window};
 use dioxus::prelude::*;
 
+/// Reports the size of the page, the window's content. The native window
+/// size is no use here: GTK on Wayland includes client-side decorations
+/// whose shadow changes with the focus.
+const SIZE_LISTENER: &str = r#"
+    const send = () => dioxus.send([window.innerWidth, window.innerHeight]);
+    window.addEventListener("resize", send);
+    send();
+    await new Promise(() => {});
+"#;
+
 #[derive(Clone, Copy)]
 pub struct LayoutKeeper {
     services: Signal<Services>,
     app: Signal<AppState>,
     pub columns: Signal<ColumnLayout>,
-    /// The current inner width of the window. The columns span all of it,
-    /// so their room is known without measuring them, which would feed
+    /// The current width of the window's content. The columns span all of
+    /// it, so their room is known without measuring them, which would feed
     /// their own widths back into the measurement.
     pub window_width: Signal<f64>,
     /// The last size of the window while it was neither maximized nor
     /// minimized, so a maximized window comes back with its normal size.
     normal_size: Signal<(f64, f64)>,
+    /// The window size minus the content size. The window is created with
+    /// the stored size, but on some platforms (e.g. GTK on Wayland) the
+    /// title bar takes part of it, so the content comes out smaller. The
+    /// first report of a normal window measures this; without it the
+    /// window would shrink with every start.
+    chrome: Signal<Option<(f64, f64)>>,
 }
 
 impl LayoutKeeper {
@@ -62,53 +78,53 @@ impl LayoutKeeper {
 pub fn use_layout_keeper(services: &Services, initial: WindowLayout) -> LayoutKeeper {
     let app = use_context::<Signal<AppState>>();
     let services = services.clone();
-    let keeper = use_context_provider(move || {
-        let desktop = window();
-        let width = desktop
-            .inner_size()
-            .to_logical::<f64>(desktop.scale_factor())
-            .width;
-        LayoutKeeper {
-            services: Signal::new(services),
-            app,
-            columns: Signal::new(ColumnLayout::restored(
-                initial.left_column,
-                initial.right_column,
-            )),
-            window_width: Signal::new(width),
-            normal_size: Signal::new((initial.width, initial.height)),
-        }
+    let keeper = use_context_provider(move || LayoutKeeper {
+        services: Signal::new(services),
+        app,
+        columns: Signal::new(ColumnLayout::restored(
+            initial.left_column,
+            initial.right_column,
+        )),
+        window_width: Signal::new(initial.width),
+        normal_size: Signal::new((initial.width, initial.height)),
+        chrome: Signal::new(None),
+    });
+    use_hook(move || {
+        spawn(async move {
+            let mut sizes = document::eval(SIZE_LISTENER);
+            while let Ok([width, height]) = sizes.recv::<[f64; 2]>().await {
+                let desktop = window();
+                if desktop.is_minimized() || width <= 0.0 {
+                    continue;
+                }
+                let mut window_width = keeper.window_width;
+                if *window_width.peek() != width {
+                    window_width.set(width);
+                }
+                if desktop.is_maximized() {
+                    continue;
+                }
+                // A window leaving maximized state also comes back with the
+                // stored size, so it can be measured then.
+                let mut chrome = keeper.chrome;
+                let (extra_width, extra_height) = *chrome
+                    .write()
+                    .get_or_insert((initial.width - width, initial.height - height));
+                let mut normal_size = keeper.normal_size;
+                normal_size.set((width + extra_width, height + extra_height));
+            }
+        });
     });
     let main = use_hook(|| window().window.id());
     use_wry_event_handler(move |event, _| {
-        let Event::WindowEvent {
-            window_id, event, ..
+        if let Event::WindowEvent {
+            window_id,
+            event: WindowEvent::CloseRequested,
+            ..
         } = event
-        else {
-            return;
-        };
-        if *window_id != main {
-            return;
-        }
-        match event {
-            WindowEvent::Resized(size) => {
-                let desktop = window();
-                let size = size.to_logical::<f64>(desktop.scale_factor());
-                if desktop.is_minimized() {
-                    return;
-                }
-                let mut window_width = keeper.window_width;
-                if *window_width.peek() != size.width {
-                    window_width.set(size.width);
-                }
-                if desktop.is_maximized() {
-                    return;
-                }
-                let mut normal_size = keeper.normal_size;
-                normal_size.set((size.width, size.height));
-            }
-            WindowEvent::CloseRequested => keeper.save_now(),
-            _ => {}
+            && *window_id == main
+        {
+            keeper.save_now();
         }
     });
     keeper
