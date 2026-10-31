@@ -8,6 +8,9 @@ use std::ops::Range;
 /// Row height in pixels. All rows have the same height, which keeps
 /// virtualization a matter of arithmetic.
 pub const ROW_HEIGHT: f64 = 26.0;
+/// Height of the column header, which stays at the top of the scrolled list.
+/// The rows start below it, so the viewport for them is this much shorter.
+pub const HEADER_HEIGHT: f64 = 24.0;
 /// Rows rendered above and below the viewport.
 pub const OVERSCAN: usize = 15;
 /// Commits fetched per page.

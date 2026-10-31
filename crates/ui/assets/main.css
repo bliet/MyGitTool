@@ -251,7 +251,55 @@ h2 {
   background: var(--selected);
   font-size: 12px;
 }
-.history-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.history-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  --history-columns: calc(var(--graph-width) + 8px) minmax(120px, 1fr)
+    var(--author-width) var(--date-width) var(--hash-width);
+}
+/* The column header scrolls sideways with the rows but stays at the top. */
+.history-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: var(--history-columns);
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding-right: 12px;
+  min-width: 100%;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.history-header > span { position: relative; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.history-header > span.resizable { overflow: visible; }
+.history-header .column-grip {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: -8px;
+  width: 8px;
+  cursor: col-resize;
+}
+.history-header .column-grip::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 3px;
+  width: 1px;
+  background: var(--border);
+}
+.history-header .column-grip:hover::after { background: var(--accent); width: 2px; left: 3px; }
+.column.history.resizing, .column.history.resizing * { cursor: col-resize; user-select: none; }
 .history-content { position: relative; min-width: 100%; }
 .history-row {
   position: absolute;
@@ -259,7 +307,7 @@ h2 {
   right: 0;
   height: 26px;
   display: grid;
-  grid-template-columns: calc(var(--graph-width) + 8px) minmax(120px, 1fr) 150px 120px 64px;
+  grid-template-columns: var(--history-columns);
   align-items: center;
   gap: 8px;
   padding-right: 12px;
@@ -310,6 +358,9 @@ h2 {
 /* Details */
 .details-body { overflow: auto; flex: 1; padding: 12px; }
 .details-body .subject { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.details-body .subject-row { display: flex; align-items: flex-start; gap: 4px; }
+.details-body .subject-row .subject { flex: 1; min-width: 0; }
+.details-body .subject-row button.icon { margin-top: 1px; padding: 0 4px; line-height: 18px; }
 .details-body .message {
   margin: 0 0 12px;
   white-space: pre-wrap;

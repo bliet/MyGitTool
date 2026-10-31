@@ -1,10 +1,11 @@
 //! Keeps track of the main window's layout and saves it, when a column
-//! resize ends and when the window closes.
+//! resize ends (side columns or history columns) and when the window closes.
 
 use super::blocking;
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::columns::ColumnLayout;
+use crate::view::history_columns::HistoryColumns;
 use application::WindowLayout;
 use dioxus::desktop::tao::event::{Event, WindowEvent};
 use dioxus::desktop::{use_wry_event_handler, window};
@@ -25,6 +26,7 @@ pub struct LayoutKeeper {
     services: Signal<Services>,
     app: Signal<AppState>,
     pub columns: Signal<ColumnLayout>,
+    pub history_columns: Signal<HistoryColumns>,
     /// The current width of the window's content. The columns span all of
     /// it, so their room is known without measuring them, which would feed
     /// their own widths back into the measurement.
@@ -44,12 +46,16 @@ impl LayoutKeeper {
     fn layout(&self) -> WindowLayout {
         let (width, height) = *self.normal_size.peek();
         let columns = *self.columns.peek();
+        let history = *self.history_columns.peek();
         WindowLayout {
             width,
             height,
             maximized: window().is_maximized(),
             left_column: columns.left,
             right_column: columns.right,
+            author_column: history.author,
+            date_column: history.date,
+            hash_column: history.hash,
         }
     }
 
@@ -84,6 +90,11 @@ pub fn use_layout_keeper(services: &Services, initial: WindowLayout) -> LayoutKe
         columns: Signal::new(ColumnLayout::restored(
             initial.left_column,
             initial.right_column,
+        )),
+        history_columns: Signal::new(HistoryColumns::restored(
+            initial.author_column,
+            initial.date_column,
+            initial.hash_column,
         )),
         window_width: Signal::new(initial.width),
         normal_size: Signal::new((initial.width, initial.height)),

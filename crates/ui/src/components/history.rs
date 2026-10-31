@@ -1,8 +1,10 @@
 use super::now_seconds;
 use super::operations::Operations;
 use super::session::{HISTORY_SCROLL_ID, Session, Viewport};
+use super::window_layout::LayoutKeeper;
 use crate::view::format::history_date;
-use crate::view::history::{ROW_HEIGHT, Selection, visible_range};
+use crate::view::history::{HEADER_HEIGHT, ROW_HEIGHT, Selection, visible_range};
+use crate::view::history_columns::{HistoryColumns, HistoryField};
 use crate::view::operation::commit_menu;
 use application::{EdgeHalf, GraphRow, RefLabel, RefLabelKind, Settings};
 use dioxus::prelude::*;
@@ -15,10 +17,28 @@ const HALF_ROW: f64 = ROW_HEIGHT / 2.0;
 /// The number of lane colours defined in the stylesheet.
 const COLORS: usize = 8;
 
+/// A resize of a history column in progress.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ColumnDrag {
+    field: HistoryField,
+    start_x: f64,
+    start_width: f64,
+}
+
 #[component]
 pub fn HistoryColumn() -> Element {
     let mut session = use_context::<Session>();
     let operations = use_context::<Operations>();
+    let keeper = use_context::<LayoutKeeper>();
+    let mut columns = keeper.history_columns;
+    let mut drag = use_signal(|| None::<ColumnDrag>);
+    let column_style = columns.read().style();
+    let dragging = drag.read().is_some();
+    let mut end_drag = move || {
+        if drag.take().is_some() {
+            keeper.save();
+        }
+    };
     let history = session.history.read();
     let uncommitted = session.work_tree.read().len();
     let offset = usize::from(uncommitted > 0);
@@ -56,7 +76,16 @@ pub fn HistoryColumn() -> Element {
     let empty = history.is_empty() && !loading && uncommitted == 0;
 
     rsx! {
-        section { class: "column history",
+        section {
+            class: if dragging { "column history resizing" } else { "column history" },
+            onmousemove: move |event| {
+                let Some(active) = *drag.peek() else { return };
+                let x = event.client_coordinates().x;
+                let width = HistoryColumns::dragged_width(active.start_width, active.start_x, x);
+                columns.write().resize(active.field, width);
+            },
+            onmouseup: move |_| end_drag(),
+            onmouseleave: move |_| end_drag(),
             div { class: "column-header",
                 h2 { "History" }
                 if let Some(branch) = filter {
@@ -80,15 +109,36 @@ pub fn HistoryColumn() -> Element {
             div {
                 id: HISTORY_SCROLL_ID,
                 class: "history-scroll",
-                style: "--graph-width: {graph_width}px;",
+                style: "--graph-width: {graph_width}px; {column_style}",
                 onscroll: move |event| {
                     session.viewport.write().scroll_top = event.data().scroll_top();
                 },
                 onresize: move |event| {
                     if let Ok(size) = event.data().get_content_box_size() {
-                        session.viewport.write().height = size.height;
+                        session.viewport.write().height = (size.height - HEADER_HEIGHT).max(0.0);
                     }
                 },
+                div { class: "history-header",
+                    span {}
+                    span { "Message" }
+                    for (field, label) in [(HistoryField::Author, "Author"), (HistoryField::Date, "Date"), (HistoryField::Hash, "Hash")] {
+                        span { key: "{label}", class: "resizable",
+                            div {
+                                class: "column-grip",
+                                title: "Drag to resize",
+                                onmousedown: move |event| {
+                                    event.prevent_default();
+                                    drag.set(Some(ColumnDrag {
+                                        field,
+                                        start_x: event.client_coordinates().x,
+                                        start_width: columns.peek().width(field),
+                                    }));
+                                },
+                            }
+                            "{label}"
+                        }
+                    }
+                }
                 div { class: "history-content", style: "height: {content_height}px;",
                     if offset == 1 && range.start == 0 {
                         div {

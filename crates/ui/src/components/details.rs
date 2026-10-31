@@ -75,6 +75,8 @@ fn CommitView(details: CommitDetails) -> Element {
     let id = commit.id;
     let short = id.short();
     let labels = session.ref_index.read().labels(&id).to_vec();
+    let mut message_collapsed = session.message_collapsed;
+    let collapsed = message_collapsed();
     let same_person = details.committer.name == commit.author.name
         && details.committer.email == commit.author.email
         && details.committer.time == commit.author.time;
@@ -86,9 +88,22 @@ fn CommitView(details: CommitDetails) -> Element {
 
     rsx! {
         div { class: "details-body",
-            h3 { class: "subject selectable", "{commit.summary}" }
-            if !body.is_empty() {
-                pre { class: "message selectable", "{body}" }
+            if body.is_empty() {
+                h3 { class: "subject selectable", "{commit.summary}" }
+            } else {
+                div { class: "subject-row",
+                    button {
+                        class: "icon",
+                        title: if collapsed { "Show the whole message" } else { "Hide the message body" },
+                        aria_expanded: "{!collapsed}",
+                        onclick: move |_| message_collapsed.toggle(),
+                        if collapsed { "▸" } else { "▾" }
+                    }
+                    h3 { class: "subject selectable", "{commit.summary}" }
+                }
+                if !collapsed {
+                    pre { class: "message selectable", "{body}" }
+                }
             }
             dl { class: "fields",
                 dt { "Commit" }

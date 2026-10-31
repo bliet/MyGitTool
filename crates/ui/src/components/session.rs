@@ -55,6 +55,9 @@ pub struct Session {
     pub selected_branch: Signal<Option<String>>,
     pub details: Signal<DetailsState>,
     pub collapsed: Signal<HashSet<String>>,
+    /// Whether the body of the commit message is hidden in the details
+    /// column. It applies to every commit, so it sticks while browsing.
+    pub message_collapsed: Signal<bool>,
     pub viewport: Signal<Viewport>,
 }
 
@@ -77,6 +80,7 @@ impl Session {
             selected_branch: Signal::new(None),
             details: Signal::new(DetailsState::Empty),
             collapsed: Signal::new(HashSet::new()),
+            message_collapsed: Signal::new(false),
             viewport: Signal::new(Viewport {
                 scroll_top: 0.0,
                 height: 800.0,

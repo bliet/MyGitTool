@@ -19,6 +19,9 @@ fn save_then_load_round_trips() {
         maximized: true,
         left_column: 222.0,
         right_column: 333.0,
+        author_column: 111.0,
+        date_column: 99.0,
+        hash_column: 77.0,
     };
     store.save(&layout).unwrap();
     assert_eq!(store.load().unwrap(), Some(layout));

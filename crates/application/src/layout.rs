@@ -43,5 +43,8 @@ fn sanitize(layout: WindowLayout) -> WindowLayout {
         maximized: layout.maximized,
         left_column: valid(layout.left_column, default.left_column),
         right_column: valid(layout.right_column, default.right_column),
+        author_column: valid(layout.author_column, default.author_column),
+        date_column: valid(layout.date_column, default.date_column),
+        hash_column: valid(layout.hash_column, default.hash_column),
     }
 }

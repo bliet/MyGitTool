@@ -23,6 +23,9 @@ struct LayoutFile {
     maximized: bool,
     left_column: f64,
     right_column: f64,
+    author_column: f64,
+    date_column: f64,
+    hash_column: f64,
 }
 
 impl Default for LayoutFile {
@@ -40,6 +43,9 @@ impl From<WindowLayout> for LayoutFile {
             maximized: layout.maximized,
             left_column: layout.left_column,
             right_column: layout.right_column,
+            author_column: layout.author_column,
+            date_column: layout.date_column,
+            hash_column: layout.hash_column,
         }
     }
 }
@@ -69,6 +75,9 @@ impl LayoutStore for JsonLayoutStore {
             maximized: f.maximized,
             left_column: f.left_column,
             right_column: f.right_column,
+            author_column: f.author_column,
+            date_column: f.date_column,
+            hash_column: f.hash_column,
         }))
     }
 

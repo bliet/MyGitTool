@@ -19,6 +19,9 @@ fn a_saved_layout_is_loaded_back() {
         maximized: true,
         left_column: 300.0,
         right_column: 420.0,
+        author_column: 200.0,
+        date_column: 90.0,
+        hash_column: 80.0,
     };
     layouts.save(&layout).unwrap();
     assert_eq!(layouts.load().unwrap(), layout);
@@ -33,6 +36,7 @@ fn nonsense_sizes_fall_back_and_tiny_windows_grow() {
         maximized: false,
         left_column: -5.0,
         right_column: f64::INFINITY,
+        ..WindowLayout::default()
     });
     let loaded = RememberLayout::new(store).load().unwrap();
     let default = WindowLayout::default();

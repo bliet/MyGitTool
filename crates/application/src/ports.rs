@@ -100,6 +100,10 @@ pub struct WindowLayout {
     pub maximized: bool,
     pub left_column: f64,
     pub right_column: f64,
+    /// The resizable columns of the history list.
+    pub author_column: f64,
+    pub date_column: f64,
+    pub hash_column: f64,
 }
 
 impl Default for WindowLayout {
@@ -110,6 +114,9 @@ impl Default for WindowLayout {
             maximized: false,
             left_column: 260.0,
             right_column: 380.0,
+            author_column: 150.0,
+            date_column: 120.0,
+            hash_column: 64.0,
         }
     }
 }
