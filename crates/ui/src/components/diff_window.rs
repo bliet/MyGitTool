@@ -1,7 +1,7 @@
 //! The diff window: a separate desktop window per changed file.
 
 use super::blocking;
-use crate::launch::{custom_head, native_theme};
+use crate::launch::{custom_head, native_theme, window_icon};
 use crate::view::diff::{
     DIFF_ROW_HEIGHT, DiffKey, Direction, Jump, Step, at_end_hint, content_width, format_size, jump,
     rows_on_screen, scroll_top_for, segments, side_class, side_labels, status, window_title,
@@ -107,7 +107,8 @@ impl DiffWindows {
             .with_title(title)
             .with_inner_size(LogicalSize::new(1300.0, 850.0))
             .with_min_inner_size(LogicalSize::new(500.0, 300.0))
-            .with_theme(native_theme(self.theme.get()));
+            .with_theme(native_theme(self.theme.get()))
+            .with_window_icon(window_icon());
         let config = Config::new()
             .with_window(builder)
             .with_menu(None)

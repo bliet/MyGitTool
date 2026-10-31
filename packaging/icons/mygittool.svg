@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- MyGitTool: two lanes of a commit graph; a branch splits off and merges back. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c84f0"/>
+      <stop offset="1" stop-color="#6a3fd0"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#shine)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="60" stroke-linecap="round">
+    <!-- The main lane. -->
+    <path d="M384 232 V792"/>
+    <!-- The branch lane: out of the lower commit, back into the upper one. -->
+    <path d="M384 752 C384 640 640 664 640 568 V456 C640 360 384 384 384 272" stroke-opacity="0.85"/>
+  </g>
+  <circle cx="384" cy="272" r="72" fill="#ffffff"/>
+  <circle cx="384" cy="512" r="56" fill="#ffffff"/>
+  <circle cx="384" cy="752" r="72" fill="#ffffff"/>
+  <circle cx="640" cy="512" r="72" fill="#ffb547" stroke="#ffffff" stroke-width="26"/>
+</svg>

@@ -8,7 +8,8 @@ use application::{
     Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories, RememberLayout, Settings, Startup,
     Theme, UserSettings, WatchRepository, WindowLayout,
 };
-use dioxus::desktop::tao::window::Theme as NativeTheme;
+use dioxus::desktop::icon_from_memory;
+use dioxus::desktop::tao::window::{Icon, Theme as NativeTheme};
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use std::sync::LazyLock;
 
@@ -26,6 +27,12 @@ static STYLE: LazyLock<String> = LazyLock::new(|| {
 }}"
     )
 });
+
+/// The app icon of every window, or `None` if it cannot be decoded (which a
+/// test rules out for the embedded file).
+pub fn window_icon() -> Option<Icon> {
+    icon_from_memory(include_bytes!("../assets/icon.png")).ok()
+}
 
 /// The `<head>` additions of every window: the stylesheet, and the theme
 /// applied before the first paint.
@@ -99,7 +106,8 @@ pub fn launch(services: Services, startup: Startup) {
         .with_inner_size(LogicalSize::new(layout.width, layout.height))
         .with_min_inner_size(LogicalSize::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT))
         .with_maximized(layout.maximized)
-        .with_theme(native_theme(settings.theme));
+        .with_theme(native_theme(settings.theme))
+        .with_window_icon(window_icon());
     let config = Config::new()
         .with_window(window)
         .with_menu(None)

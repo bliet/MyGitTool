@@ -3,5 +3,6 @@ Type=Application
 Name=MyGitTool
 Comment=Desktop Git client
 Exec=mygittool %f
+Icon=mygittool
 Terminal=false
 Categories=Development;RevisionControl;
