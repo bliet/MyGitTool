@@ -421,6 +421,27 @@ impl application::RepositoryWriter for FakeWriter {
         Ok(())
     }
 
+    fn create_tag(
+        &self,
+        _: &RepositoryInfo,
+        name: &str,
+        target: domain::CommitId,
+        message: Option<&str>,
+    ) -> Result<(), application::WriteError> {
+        match message {
+            Some(message) => {
+                self.record(format!("create_tag {name} {} {message:?}", target.short()))
+            }
+            None => self.record(format!("create_tag {name} {}", target.short())),
+        }
+        Ok(())
+    }
+
+    fn delete_tag(&self, _: &RepositoryInfo, name: &str) -> Result<(), application::WriteError> {
+        self.record(format!("delete_tag {name}"));
+        Ok(())
+    }
+
     fn continue_operation(
         &self,
         _: &RepositoryInfo,
@@ -470,6 +491,17 @@ impl application::RemoteOperations for FakeRemote {
         _: &dyn application::CredentialProvider,
     ) -> Result<(), application::RemoteError> {
         self.answer(format!("push {branch} {remote} {remote_ref}"))
+    }
+
+    fn push_tag(
+        &self,
+        _: &RepositoryInfo,
+        tag: &str,
+        remote: &str,
+        _: &dyn application::ProgressReporter,
+        _: &dyn application::CredentialProvider,
+    ) -> Result<(), application::RemoteError> {
+        self.answer(format!("push_tag {tag} {remote}"))
     }
 
     fn delete_branch(

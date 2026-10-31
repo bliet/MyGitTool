@@ -45,6 +45,12 @@ pub enum OperationError {
     /// branch does not contain.
     #[error("{branch} has {commits} commit(s) that are not merged into the current branch")]
     Unmerged { branch: String, commits: usize },
+    #[error("invalid tag name: {0}")]
+    InvalidTagName(InvalidBranchName),
+    #[error("a tag named {0} already exists")]
+    TagExists(String),
+    #[error("the tag {0} does not exist")]
+    TagNotFound(String),
     #[error("there is no merge or rebase in progress")]
     NothingInProgress,
     #[error("the app cannot continue a {0}; finish it with Git")]

@@ -248,6 +248,18 @@ pub trait RepositoryWriter: Send + Sync {
     ) -> Result<(), WriteError>;
     /// Deletes the local branch `name` and its config section.
     fn delete_branch(&self, repo: &RepositoryInfo, name: &str) -> Result<(), WriteError>;
+    /// Creates the tag `name` at `target`: an annotated tag with `message`
+    /// and the configured user as tagger, or a lightweight tag without one.
+    /// Fails if the tag exists.
+    fn create_tag(
+        &self,
+        repo: &RepositoryInfo,
+        name: &str,
+        target: CommitId,
+        message: Option<&str>,
+    ) -> Result<(), WriteError>;
+    /// Deletes the local tag `name`.
+    fn delete_tag(&self, repo: &RepositoryInfo, name: &str) -> Result<(), WriteError>;
     /// Continues the merge or rebase in progress once its conflicts are
     /// resolved and staged. A rebase may stop again at a later commit.
     fn continue_operation(&self, repo: &RepositoryInfo) -> Result<Integration, WriteError>;
@@ -299,7 +311,18 @@ pub trait RemoteOperations: Send + Sync {
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
     ) -> Result<(), RemoteError>;
-    /// Deletes `remote_ref` on `remote` and its remote-tracking branch.
+    /// Pushes the local tag `tag` to `remote`. Never forces: a different tag
+    /// of the same name on the remote is rejected.
+    fn push_tag(
+        &self,
+        repo: &RepositoryInfo,
+        tag: &str,
+        remote: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError>;
+    /// Deletes `remote_ref` (a branch or a tag) on `remote`, and the
+    /// remote-tracking branch of a branch.
     fn delete_branch(
         &self,
         repo: &RepositoryInfo,

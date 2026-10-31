@@ -1,7 +1,8 @@
 use application::{RemoteBranches, RepositoryRefs};
-use domain::{Branch, BranchKind, CommitId, Head, Remote, Upstream};
+use domain::{Branch, BranchKind, CommitId, Head, Remote, Tag, Upstream};
+use std::cmp::Ordering;
 use std::collections::HashSet;
-use ui::view::branch_tree::{BranchRowKind, branch_rows, remote_key};
+use ui::view::branch_tree::{BranchRowKind, TAGS_KEY, branch_rows, natural_cmp, remote_key};
 
 fn local(name: &str, is_head: bool, upstream: Option<Upstream>) -> Branch {
     Branch {
@@ -81,6 +82,7 @@ fn render(collapsed: &HashSet<String>) -> Vec<String> {
                         if item.is_head { "*" } else { "" }
                     )
                 }
+                BranchRowKind::Tag(tag) => format!("{indent}#{}", tag.name),
             }
         })
         .collect()
@@ -174,8 +176,75 @@ fn local_branches_and_unknown_hosts_have_no_link() {
         .filter(|row| match &row.kind {
             BranchRowKind::Folder { web, .. } => web.is_some(),
             BranchRowKind::Branch(item) => item.web.is_some(),
-            BranchRowKind::Section(_) => false,
+            BranchRowKind::Section(_) | BranchRowKind::Tag(_) => false,
         })
         .count();
     assert_eq!(linked, 0);
+}
+
+fn with_tags(names: &[&str]) -> application::RepositoryRefs {
+    let mut refs = refs();
+    refs.tags = names
+        .iter()
+        .map(|name| Tag {
+            name: (*name).into(),
+            target: CommitId::from_bytes([3; 20]),
+        })
+        .collect();
+    refs
+}
+
+fn tag_lines(refs: &application::RepositoryRefs, collapsed: &HashSet<String>) -> Vec<String> {
+    let rows = branch_rows(refs, collapsed);
+    let start = rows
+        .iter()
+        .position(|row| row.kind == BranchRowKind::Section("Tags"))
+        .unwrap();
+    rows[start + 1..]
+        .iter()
+        .map(|row| match &row.kind {
+            BranchRowKind::Folder {
+                name, collapsed, ..
+            } => {
+                format!("{}{name}", if *collapsed { "+" } else { "-" })
+            }
+            BranchRowKind::Tag(tag) => format!("  {}", tag.name),
+            other => format!("{other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn tags_come_last_newest_version_first() {
+    let refs = with_tags(&["v1.9", "v1.10", "v1.2", "beta"]);
+    assert_eq!(
+        tag_lines(&refs, &HashSet::new()),
+        ["-4 tags", "  v1.10", "  v1.9", "  v1.2", "  beta"]
+    );
+}
+
+#[test]
+fn the_tags_folder_collapses() {
+    let refs = with_tags(&["v1"]);
+    let collapsed: HashSet<String> = [TAGS_KEY.to_owned()].into();
+    assert_eq!(tag_lines(&refs, &collapsed), ["+1 tag"]);
+}
+
+#[test]
+fn no_tags_no_section() {
+    let rows = branch_rows(&refs(), &HashSet::new());
+    assert!(
+        !rows
+            .iter()
+            .any(|r| r.kind == BranchRowKind::Section("Tags"))
+    );
+}
+
+#[test]
+fn natural_order_compares_numbers_by_value() {
+    assert_eq!(natural_cmp("v1.10", "v1.9"), Ordering::Greater);
+    assert_eq!(natural_cmp("v2", "v10"), Ordering::Less);
+    assert_eq!(natural_cmp("v01", "v1"), Ordering::Equal);
+    assert_eq!(natural_cmp("a", "b"), Ordering::Less);
+    assert_eq!(natural_cmp("v1", "v1.0"), Ordering::Less);
 }

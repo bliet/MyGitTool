@@ -1,6 +1,6 @@
 //! Texts and menus for the branch and remote operations.
 
-use crate::view::branch_tree::BranchItem;
+use crate::view::branch_tree::{BranchItem, TagItem};
 use crate::view::diff::format_size;
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
 use domain::{CommitId, OngoingOperation, Progress, WebLink};
@@ -31,6 +31,24 @@ pub enum Action {
     DeleteRemote {
         remote: String,
         branch: String,
+    },
+    /// Asks for a name and a message, then creates a tag at `target`.
+    /// `from` names the target for the dialog.
+    CreateTag {
+        target: CommitId,
+        from: String,
+    },
+    PushTag {
+        tag: String,
+        remote: String,
+    },
+    DeleteTag {
+        tag: String,
+    },
+    /// Asks for confirmation, then deletes the tag on the remote.
+    DeleteRemoteTag {
+        remote: String,
+        tag: String,
     },
     /// Merges `refname` (shown as `name`) into the current branch.
     Merge {
@@ -182,13 +200,60 @@ fn open_in_browser(web: &WebLink) -> MenuEntry {
 
 /// The context menu of a commit in the history.
 pub fn commit_menu(id: CommitId) -> Vec<MenuEntry> {
-    vec![entry(
-        "Create branch here…",
+    vec![
+        entry(
+            "Create branch here…",
+            Action::CreateBranch {
+                start: id,
+                from: id.short(),
+            },
+        ),
+        entry(
+            "Create tag here…",
+            Action::CreateTag {
+                target: id,
+                from: id.short(),
+            },
+        ),
+    ]
+}
+
+/// The context menu of a tag: branch from it, push it to each remote, and
+/// delete it here or on each remote.
+pub fn tag_menu(tag: &TagItem, remotes: &[String]) -> Vec<MenuEntry> {
+    let mut entries = vec![entry(
+        "Create branch from here…",
         Action::CreateBranch {
-            start: id,
-            from: id.short(),
+            start: tag.target,
+            from: tag.name.clone(),
         },
-    )]
+    )];
+    for (i, remote) in remotes.iter().enumerate() {
+        let push = entry(
+            format!("Push {} to {remote}", tag.name),
+            Action::PushTag {
+                tag: tag.name.clone(),
+                remote: remote.clone(),
+            },
+        );
+        entries.push(if i == 0 { separated(push) } else { push });
+    }
+    entries.push(separated(entry(
+        format!("Delete {}", tag.name),
+        Action::DeleteTag {
+            tag: tag.name.clone(),
+        },
+    )));
+    for remote in remotes {
+        entries.push(entry(
+            format!("Delete {} from {remote}…", tag.name),
+            Action::DeleteRemoteTag {
+                remote: remote.clone(),
+                tag: tag.name.clone(),
+            },
+        ));
+    }
+    entries
 }
 
 /// What the status strip says while `action` runs.
@@ -209,6 +274,10 @@ pub fn running_label(action: &Action) -> String {
         Action::CreateBranch { .. } => "Creating the branch…".to_owned(),
         Action::DeleteLocal { branch } => format!("Deleting {branch}…"),
         Action::DeleteRemote { remote, branch } => format!("Deleting {branch} from {remote}…"),
+        Action::CreateTag { .. } => "Creating the tag…".to_owned(),
+        Action::PushTag { tag, remote } => format!("Pushing {tag} to {remote}…"),
+        Action::DeleteTag { tag } => format!("Deleting {tag}…"),
+        Action::DeleteRemoteTag { remote, tag } => format!("Deleting {tag} from {remote}…"),
         Action::Merge { name, .. } => format!("Merging {name}…"),
         Action::Rebase { name, .. } => format!("Rebasing onto {name}…"),
     }

@@ -2,11 +2,11 @@ use crate::components::App;
 use crate::state::AppState;
 use crate::view::settings::theme_script;
 use application::{
-    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
-    Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
-    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository, Pull, Push,
-    RebaseCurrentOnto, RecentRepositories, RememberLayout, Settings, Startup, Theme, UserSettings,
-    WatchRepository, WindowLayout,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateTag,
+    DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing,
+    LoadWorkTreeChanges, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository,
+    Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories, RememberLayout, Settings, Startup,
+    Theme, UserSettings, WatchRepository, WindowLayout,
 };
 use dioxus::desktop::tao::window::Theme as NativeTheme;
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
@@ -66,6 +66,9 @@ pub struct Services {
     pub checkout: Checkout,
     pub create_branch: CreateBranch,
     pub delete_branch: DeleteBranch,
+    pub create_tag: CreateTag,
+    pub delete_tag: DeleteTag,
+    pub push_tag: PushTag,
     pub merge_into_current: MergeIntoCurrent,
     pub rebase_current_onto: RebaseCurrentOnto,
     pub continue_operation: ContinueOperation,

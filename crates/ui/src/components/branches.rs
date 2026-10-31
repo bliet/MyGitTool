@@ -1,7 +1,7 @@
 use super::operations::Operations;
 use super::session::Session;
-use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows, remote_of_folder};
-use crate::view::operation::{Action, branch_menu, remote_menu};
+use crate::view::branch_tree::{BranchItem, BranchRowKind, TagItem, branch_rows, remote_of_folder};
+use crate::view::operation::{Action, branch_menu, remote_menu, tag_menu};
 use application::Settings;
 use dioxus::prelude::*;
 use domain::WebLink;
@@ -19,6 +19,12 @@ pub fn BranchesColumn() -> Element {
         None => Vec::new(),
     };
     let selected = session.selected_branch.read().clone();
+    let remotes: Vec<String> = session
+        .refs
+        .read()
+        .iter()
+        .flat_map(|refs| refs.remotes.iter().map(|r| r.remote.name.clone()))
+        .collect();
     let guides = use_context::<Signal<Settings>>().read().indent_guides;
 
     rsx! {
@@ -58,6 +64,14 @@ pub fn BranchesColumn() -> Element {
                                 if let Some(web) = web.clone() {
                                     OpenInBrowserButton { web }
                                 }
+                            }
+                        },
+                        BranchRowKind::Tag(tag) => rsx! {
+                            TagRow {
+                                key: "{tag.refname()}",
+                                selected: selected.as_deref() == Some(tag.refname().as_str()),
+                                remotes: remotes.clone(),
+                                tag,
                             }
                         },
                         BranchRowKind::Branch(item) => rsx! {
@@ -127,6 +141,45 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             if let Some(web) = item.web.clone() {
                 OpenInBrowserButton { web }
             }
+        }
+    }
+}
+
+#[component]
+fn TagRow(tag: TagItem, selected: bool, remotes: Vec<String>) -> Element {
+    let mut session = use_context::<Session>();
+    let class = if selected {
+        "tree-row tag selected"
+    } else {
+        "tree-row tag"
+    };
+    let indent = folder_indent(1) + 12;
+    let refname = tag.refname();
+    let title = format!(
+        "{}\nClick to show the tagged commit\nRight-click to push or delete",
+        tag.name
+    );
+    let target = tag.target;
+    let menu = tag_menu(&tag, &remotes);
+    rsx! {
+        li {
+            class,
+            title: "{title}",
+            style: "padding-left: {indent}px; --depth: 1;",
+            onclick: {
+                let refname = refname.clone();
+                move |_| {
+                    session.selected_branch.set(Some(refname.clone()));
+                    session.select_and_reveal(target);
+                }
+            },
+            oncontextmenu: move |event| {
+                session.selected_branch.set(Some(refname.clone()));
+                session.select_and_reveal(target);
+                consume_context::<Operations>().open_menu(&event, menu.clone());
+            },
+            span { class: "marker tag-marker", "◆" }
+            span { class: "label", "{tag.name}" }
         }
     }
 }

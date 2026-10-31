@@ -24,6 +24,22 @@ pub struct BranchItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagItem {
+    pub name: String,
+    pub target: CommitId,
+}
+
+impl TagItem {
+    pub fn refname(&self) -> String {
+        format!("refs/tags/{}", self.name)
+    }
+}
+
+/// The collapse key of the tags folder. It starts collapsed, as a project
+/// can have hundreds of tags.
+pub const TAGS_KEY: &str = "tags";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BranchRowKind {
     Section(&'static str),
     /// A `/`-prefix group or a remote. `key` identifies it for collapsing.
@@ -35,6 +51,7 @@ pub enum BranchRowKind {
         web: Option<WebLink>,
     },
     Branch(BranchItem),
+    Tag(TagItem),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,8 +73,9 @@ pub fn remote_of_folder(key: &str) -> Option<&str> {
 }
 
 /// Local branches grouped by `/` prefix, then each remote with its branches
-/// grouped the same way. Folders come before branches; both are sorted.
-/// Children of collapsed folders (by key) are left out.
+/// grouped the same way, then the tags in one folder, newest version first.
+/// Folders come before branches; both are sorted. Children of collapsed
+/// folders (by key) are left out.
 pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<BranchRow> {
     let mut rows = vec![BranchRow {
         depth: 0,
@@ -104,7 +122,72 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
             );
         }
     }
+    if !refs.tags.is_empty() {
+        rows.push(BranchRow {
+            depth: 0,
+            kind: BranchRowKind::Section("Tags"),
+        });
+        let is_collapsed = collapsed.contains(TAGS_KEY);
+        let count = match refs.tags.len() {
+            1 => "1 tag".to_owned(),
+            n => format!("{n} tags"),
+        };
+        rows.push(BranchRow {
+            depth: 0,
+            kind: BranchRowKind::Folder {
+                key: TAGS_KEY.to_owned(),
+                name: count,
+                collapsed: is_collapsed,
+                web: None,
+            },
+        });
+        if !is_collapsed {
+            let mut tags: Vec<_> = refs.tags.iter().collect();
+            tags.sort_by(|a, b| natural_cmp(&b.name, &a.name));
+            rows.extend(tags.into_iter().map(|tag| BranchRow {
+                depth: 1,
+                kind: BranchRowKind::Tag(TagItem {
+                    name: tag.name.clone(),
+                    target: tag.target,
+                }),
+            }));
+        }
+    }
     rows
+}
+
+/// Compares names with runs of digits as numbers, so `v1.10` comes after
+/// `v1.9`.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let (mut a, mut b) = (a, b);
+    loop {
+        let (Some(x), Some(y)) = (a.chars().next(), b.chars().next()) else {
+            return a.len().cmp(&b.len());
+        };
+        if x.is_ascii_digit() && y.is_ascii_digit() {
+            let end_a = a.find(|c: char| !c.is_ascii_digit()).unwrap_or(a.len());
+            let end_b = b.find(|c: char| !c.is_ascii_digit()).unwrap_or(b.len());
+            let (digits_a, digits_b) = (
+                a[..end_a].trim_start_matches('0'),
+                b[..end_b].trim_start_matches('0'),
+            );
+            let order = digits_a
+                .len()
+                .cmp(&digits_b.len())
+                .then_with(|| digits_a.cmp(digits_b));
+            if order.is_ne() {
+                return order;
+            }
+            a = &a[end_a..];
+            b = &b[end_b..];
+        } else {
+            if x != y {
+                return x.cmp(&y);
+            }
+            a = &a[x.len_utf8()..];
+            b = &b[y.len_utf8()..];
+        }
+    }
 }
 
 #[derive(Default)]

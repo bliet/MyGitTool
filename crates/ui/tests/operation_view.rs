@@ -1,10 +1,10 @@
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
 use domain::{CommitId, OngoingOperation, Progress, web_link};
-use ui::view::branch_tree::{BranchItem, remote_key, remote_of_folder};
+use ui::view::branch_tree::{BranchItem, TagItem, remote_key, remote_of_folder};
 use ui::view::operation::{
     Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
     integration_summary, ongoing_text, progress_fraction, progress_text, remote_menu,
-    running_label,
+    running_label, tag_menu,
 };
 
 fn tip() -> CommitId {
@@ -147,11 +147,51 @@ fn remotes_fetch_and_commits_branch() {
     let id = CommitId::from_bytes([0xab; 20]);
     assert_eq!(
         actions(commit_menu(id)),
-        [Action::CreateBranch {
-            start: id,
-            from: "abababa".into()
-        }]
+        [
+            Action::CreateBranch {
+                start: id,
+                from: "abababa".into()
+            },
+            Action::CreateTag {
+                target: id,
+                from: "abababa".into()
+            }
+        ]
     );
+}
+
+#[test]
+fn tags_branch_push_and_delete_per_remote() {
+    let tag = TagItem {
+        name: "v1".into(),
+        target: tip(),
+    };
+    let remotes = ["origin".to_owned(), "fork".to_owned()];
+    let menu = tag_menu(&tag, &remotes);
+    let labels: Vec<&str> = menu.iter().map(|e| e.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Create branch from here…",
+            "Push v1 to origin",
+            "Push v1 to fork",
+            "Delete v1",
+            "Delete v1 from origin…",
+            "Delete v1 from fork…",
+        ]
+    );
+    let separated: Vec<bool> = menu.iter().map(|e| e.separated).collect();
+    assert_eq!(separated, [false, true, false, true, false, false]);
+    assert_eq!(
+        menu[2].action,
+        Action::PushTag {
+            tag: "v1".into(),
+            remote: "fork".into()
+        }
+    );
+    assert_eq!(running_label(&menu[4].action), "Deleting v1 from origin…");
+    // Without remotes, a tag can only be branched from and deleted.
+    assert_eq!(tag_menu(&tag, &[]).len(), 2);
 }
 
 #[test]

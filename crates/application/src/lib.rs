@@ -17,6 +17,7 @@ mod refs;
 mod search;
 mod settings;
 mod sync;
+mod tags;
 mod watch;
 mod work_tree;
 
@@ -46,5 +47,6 @@ pub use sync::{
     AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,
     PushDestination, PushPlan,
 };
+pub use tags::{CreateTag, DeleteTag, PushTag};
 pub use watch::WatchRepository;
 pub use work_tree::LoadWorkTreeChanges;

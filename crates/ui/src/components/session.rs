@@ -2,7 +2,7 @@
 
 use super::blocking;
 use crate::launch::Services;
-use crate::view::branch_tree::BranchItem;
+use crate::view::branch_tree::{BranchItem, TAGS_KEY};
 use crate::view::history::{HistoryList, PAGE_SIZE, ROW_HEIGHT, Selection, scroll_to_reveal};
 use crate::view::refresh::Reload;
 use application::{
@@ -88,7 +88,7 @@ impl Session {
             selection: Signal::new(None),
             selected_branch: Signal::new(None),
             details: Signal::new(DetailsState::Empty),
-            collapsed: Signal::new(HashSet::new()),
+            collapsed: Signal::new(HashSet::from([TAGS_KEY.to_owned()])),
             message_collapsed: Signal::new(false),
             collapsed_dirs: Signal::new(HashSet::new()),
             viewport: Signal::new(Viewport {

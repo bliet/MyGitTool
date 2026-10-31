@@ -64,3 +64,9 @@ pub fn validate_branch_name(name: &str) -> Result<(), InvalidBranchName> {
     }
     Ok(())
 }
+
+/// Checks that `name` (e.g. `v1.2.0`) is a valid tag name. Tags follow the
+/// same rules as branches.
+pub fn validate_tag_name(name: &str) -> Result<(), InvalidBranchName> {
+    validate_branch_name(name)
+}

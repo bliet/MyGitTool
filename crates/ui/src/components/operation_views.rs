@@ -4,7 +4,7 @@ use super::operations::{Dialog, Operations, dialog_title};
 use super::session::Session;
 use crate::view::operation::{can_continue, ongoing_text, progress_fraction, progress_text};
 use dioxus::prelude::*;
-use domain::{CommitId, Credential, CredentialRequest, validate_branch_name};
+use domain::{CommitId, Credential, CredentialRequest, validate_branch_name, validate_tag_name};
 
 /// Shows the running operation with its progress, or the last result.
 #[component]
@@ -97,6 +97,20 @@ pub fn DialogHost() -> Element {
                             }
                         }
                     },
+                    Dialog::CreateTag { target, error, .. } => rsx! {
+                        CreateTagForm { target, error }
+                    },
+                    Dialog::ConfirmDeleteRemoteTag { remote, tag } => rsx! {
+                        p { "This deletes the tag on the server for everyone who uses {remote}. The tag here stays." }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary danger",
+                                onclick: move |_| operations.delete_remote_tag(remote.clone(), tag.clone()),
+                                "Delete from {remote}"
+                            }
+                        }
+                    },
                     Dialog::ConfirmDeleteRemote { remote, branch } => rsx! {
                         p { "This deletes the branch on the server for everyone who uses {remote}." }
                         div { class: "dialog-buttons",
@@ -182,6 +196,64 @@ fn CreateBranchForm(start: CommitId, error: Option<String>) -> Element {
         div { class: "dialog-buttons",
             button { onclick: move |_| operations.dismiss(), "Cancel" }
             button { class: "primary", disabled: !ready, onclick: move |_| submit(), "Create branch" }
+        }
+    }
+}
+
+#[component]
+fn CreateTagForm(target: CommitId, error: Option<String>) -> Element {
+    let operations = use_context::<Operations>();
+    let mut name = use_signal(String::new);
+    let mut message = use_signal(String::new);
+    let typed = name.read().trim().to_owned();
+    let invalid = if typed.is_empty() {
+        None
+    } else {
+        validate_tag_name(&typed).err().map(|e| e.to_string())
+    };
+    let shown = invalid.clone().or(error);
+    let has_message = shown.is_some();
+    let ready = !typed.is_empty() && invalid.is_none();
+    let submit = move || {
+        let typed = name.peek().trim().to_owned();
+        if !typed.is_empty() && validate_tag_name(&typed).is_ok() {
+            operations.create_tag(typed, target, message.peek().clone());
+        }
+    };
+
+    rsx! {
+        div { class: "dialog-fields",
+            label { "Tag name"
+                input {
+                    r#type: "text",
+                    value: "{name}",
+                    placeholder: "v1.0.0",
+                    spellcheck: "false",
+                    aria_invalid: "{has_message}",
+                    oninput: move |e| name.set(e.value()),
+                    onkeydown: move |e: KeyboardEvent| {
+                        if e.key() == Key::Enter {
+                            submit();
+                        }
+                    },
+                    onmounted: move |e| async move { let _ = e.set_focus(true).await; },
+                }
+            }
+            if let Some(shown) = shown {
+                p { class: "field-error", role: "alert", "{shown}" }
+            }
+            label { "Message (optional)"
+                textarea {
+                    rows: "3",
+                    value: "{message}",
+                    placeholder: "With a message, the tag is annotated",
+                    oninput: move |e| message.set(e.value()),
+                }
+            }
+        }
+        div { class: "dialog-buttons",
+            button { onclick: move |_| operations.dismiss(), "Cancel" }
+            button { class: "primary", disabled: !ready, onclick: move |_| submit(), "Create tag" }
         }
     }
 }

@@ -6,10 +6,10 @@
 
 use anyhow::Context;
 use application::{
-    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
-    Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
-    MergeIntoCurrent, OpenRepository, Pull, Push, RebaseCurrentOnto, RecentRepositories,
-    RememberLayout, UserSettings, WatchRepository,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateTag,
+    DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing,
+    LoadWorkTreeChanges, MergeIntoCurrent, OpenRepository, Pull, Push, PushTag, RebaseCurrentOnto,
+    RecentRepositories, RememberLayout, UserSettings, WatchRepository,
 };
 use infra_config::{JsonLayoutStore, JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{
@@ -77,7 +77,10 @@ fn main() -> anyhow::Result<ExitCode> {
             abort_operation: AbortOperation::new(writer.clone()),
             checkout: Checkout::new(reader.clone(), writer.clone()),
             create_branch: CreateBranch::new(reader.clone(), writer.clone()),
-            delete_branch: DeleteBranch::new(reader.clone(), writer.clone(), remote),
+            delete_branch: DeleteBranch::new(reader.clone(), writer.clone(), remote.clone()),
+            create_tag: CreateTag::new(reader.clone(), writer.clone()),
+            delete_tag: DeleteTag::new(reader.clone(), writer.clone(), remote.clone()),
+            push_tag: PushTag::new(reader.clone(), remote),
             merge_into_current: MergeIntoCurrent::new(reader.clone(), writer.clone()),
             rebase_current_onto: RebaseCurrentOnto::new(reader.clone(), writer.clone()),
             continue_operation: ContinueOperation::new(reader.clone(), writer),

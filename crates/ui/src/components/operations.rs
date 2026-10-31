@@ -77,6 +77,17 @@ pub enum Dialog {
         remote: String,
         branch: String,
     },
+    /// Asks for the name and message of a new tag at `target`.
+    CreateTag {
+        target: CommitId,
+        from: String,
+        /// Why the last attempt failed, e.g. the name exists.
+        error: Option<String>,
+    },
+    ConfirmDeleteRemoteTag {
+        remote: String,
+        tag: String,
+    },
 }
 
 /// A context menu at window coordinates.
@@ -211,6 +222,33 @@ impl Operations {
                 self.dialog
                     .set(Some(Dialog::ConfirmDeleteRemote { remote, branch }));
             }
+            Action::CreateTag { target, from } => self.dialog.set(Some(Dialog::CreateTag {
+                target,
+                from,
+                error: None,
+            })),
+            Action::PushTag { tag, remote } => self.spawn(async move {
+                let push = services.push_tag;
+                let summary = format!("Pushed {tag} to {remote}");
+                let result = self
+                    .run(label, move |progress, credentials| {
+                        push.push(&repo, &tag, &remote, progress, credentials)
+                    })
+                    .await;
+                self.finish("Push", result, |()| summary);
+            }),
+            Action::DeleteTag { tag } => self.spawn(async move {
+                let delete = services.delete_tag;
+                let summary = format!("Deleted {tag}");
+                let result = self
+                    .run(label, move |_, _| delete.delete_local(&repo, &tag))
+                    .await;
+                self.finish("Delete", result, |()| summary);
+            }),
+            Action::DeleteRemoteTag { remote, tag } => {
+                self.dialog
+                    .set(Some(Dialog::ConfirmDeleteRemoteTag { remote, tag }));
+            }
             Action::Merge { refname, .. } => self.spawn(async move {
                 let merge = services.merge_into_current;
                 let result = self
@@ -326,6 +364,53 @@ impl Operations {
             let result = self
                 .run(label, move |progress, credentials| {
                     delete.delete_remote(&repo, &remote, &branch, progress, credentials)
+                })
+                .await;
+            self.finish("Delete", result, |()| summary);
+        });
+    }
+
+    /// Creates a tag from the tag dialog. A failure the user can fix (a
+    /// taken or invalid name) keeps the dialog open with the reason.
+    pub fn create_tag(mut self, name: String, target: CommitId, message: String) {
+        let create = self.services.peek().create_tag.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let attempt = {
+                let name = name.clone();
+                self.run("Creating the tag…".to_owned(), move |_, _| {
+                    create.create(&repo, &name, target, &message)
+                })
+                .await
+            };
+            if let Some(Err(
+                err @ (OperationError::TagExists(_) | OperationError::InvalidTagName(_)),
+            )) = &attempt
+            {
+                if let Some(Dialog::CreateTag { error, .. }) = self.dialog.write().as_mut() {
+                    *error = Some(err.to_string());
+                }
+                return;
+            }
+            self.dialog.set(None);
+            self.finish("Create tag", attempt, |()| format!("Created {name}"));
+        });
+    }
+
+    /// Deletes a tag on a remote, after the confirm dialog.
+    pub fn delete_remote_tag(mut self, remote: String, tag: String) {
+        self.dialog.set(None);
+        let delete = self.services.peek().delete_tag.clone();
+        let repo = self.session.repo.peek().clone();
+        let label = running_label(&Action::DeleteRemoteTag {
+            remote: remote.clone(),
+            tag: tag.clone(),
+        });
+        self.spawn(async move {
+            let summary = format!("Deleted {tag} from {remote}");
+            let result = self
+                .run(label, move |progress, credentials| {
+                    delete.delete_remote(&repo, &remote, &tag, progress, credentials)
                 })
                 .await;
             self.finish("Delete", result, |()| summary);
@@ -560,5 +645,7 @@ pub fn dialog_title(dialog: &Dialog) -> String {
         Dialog::ConfirmDeleteRemote { remote, branch } => {
             format!("Delete {branch} from {remote}?")
         }
+        Dialog::CreateTag { from, .. } => format!("New tag at {from}"),
+        Dialog::ConfirmDeleteRemoteTag { remote, tag } => format!("Delete {tag} from {remote}?"),
     }
 }

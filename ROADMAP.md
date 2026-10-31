@@ -72,7 +72,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [ ] Unified (inline) mode in the diff window
 - [ ] Multiple repositories in tabs
 - [ ] Optional credential storage in the OS keychain
-- [ ] Tags: create, delete and push
+- [x] Tags: create, delete and push
 - [ ] Stash list in the left column
 - [x] Search and filter the history by message, author or hash
 - [ ] Force push (`--force-with-lease`) with a confirmation

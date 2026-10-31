@@ -167,6 +167,31 @@ impl RepositoryWriter for GitRepositoryWriter {
         branch.delete().map_err(error)
     }
 
+    fn create_tag(
+        &self,
+        repo: &RepositoryInfo,
+        name: &str,
+        target: CommitId,
+        message: Option<&str>,
+    ) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let commit = git.find_commit(map::oid(target)).map_err(error)?;
+        match message {
+            Some(message) => {
+                let tagger = git.signature().map_err(error)?;
+                git.tag(name, commit.as_object(), &tagger, message, false)
+            }
+            None => git.tag_lightweight(name, commit.as_object(), false),
+        }
+        .map_err(error)?;
+        Ok(())
+    }
+
+    fn delete_tag(&self, repo: &RepositoryInfo, name: &str) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        git.tag_delete(name).map_err(error)
+    }
+
     fn continue_operation(&self, repo: &RepositoryInfo) -> Result<Integration, WriteError> {
         let mut git = open(repo)?;
         let signature = git.signature().map_err(error)?;

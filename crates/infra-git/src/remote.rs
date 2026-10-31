@@ -1,4 +1,5 @@
 use crate::credentials::{AllowedCredentials, Attempt, CredentialChain};
+use crate::map;
 use application::{CredentialProvider, ProgressReporter, RemoteError, RemoteOperations};
 use domain::{Progress, RepositoryInfo};
 use git2::{
@@ -56,6 +57,20 @@ impl RemoteOperations for GitRemoteOperations {
         // No leading `+`: the remote only accepts a fast-forward.
         let refspec = format!("refs/heads/{branch}:{remote_ref}");
         push_refspec(repo, remote, &refspec, remote_ref, progress, credentials)
+    }
+
+    fn push_tag(
+        &self,
+        repo: &RepositoryInfo,
+        tag: &str,
+        remote: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError> {
+        let tag_ref = format!("refs/tags/{tag}");
+        // No leading `+`: an existing tag on the remote is never replaced.
+        let refspec = format!("{tag_ref}:{tag_ref}");
+        push_refspec(repo, remote, &refspec, &tag_ref, progress, credentials)
     }
 
     fn delete_branch(
@@ -120,6 +135,24 @@ fn push_refspec(
                 bytes,
             });
         });
+        // Like git, never move a tag the remote already has. libgit2 would
+        // accept it as a fast-forward.
+        callbacks.push_negotiation(|updates| {
+            for update in updates {
+                let tag = update.dst_refname_bytes().starts_with(b"refs/tags/");
+                let exists = !update.src().is_zero();
+                if tag && exists && update.src() != update.dst() && !update.dst().is_zero() {
+                    *rejected.borrow_mut() = Some(RemoteError::Rejected {
+                        reference: map::text(update.dst_refname_bytes()),
+                        message: "the remote already has a different tag of that name".to_owned(),
+                    });
+                    return Err(git2::Error::from_str(
+                        "the tag already exists on the remote",
+                    ));
+                }
+            }
+            Ok(())
+        });
         callbacks.push_update_reference(|reference, status| {
             if let Some(message) = status {
                 *rejected.borrow_mut() = Some(RemoteError::Rejected {
@@ -133,6 +166,10 @@ fn push_refspec(
         options.remote_callbacks(callbacks);
         match handle.push(&[refspec], Some(&mut options)) {
             Ok(()) => rejected.borrow_mut().take().map_or(Ok(()), Err),
+            // The negotiation refused the push and said why.
+            Err(_) if rejected.borrow().is_some() => {
+                rejected.borrow_mut().take().map_or(Ok(()), Err)
+            }
             Err(err) if err.code() == ErrorCode::NotFastForward => Err(RemoteError::Rejected {
                 reference: remote_ref.to_owned(),
                 message: "the remote branch has commits that are not here; pull first".to_owned(),
