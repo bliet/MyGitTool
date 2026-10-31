@@ -11,8 +11,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The packages are named after the version in Cargo.toml, so a tag that
+  # doesn't match it would publish misnamed packages.
+  check-version:
+    name: check version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Compare the tag with the Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          pkgid=$(cargo pkgid -p app)
+          version=${pkgid##*[#@]}
+          tag=${GITHUB_REF_NAME#v}
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the Cargo.toml version $version. Bump the version before tagging."
+            exit 1
+          fi
+
   package:
     name: package (${{ matrix.os }})
+    needs: check-version
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +59,7 @@ jobs:
 
   arch:
     name: package (Arch Linux)
+    needs: check-version
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
@@ -75,3 +96,5 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          # Alpha and beta versions are published as pre-releases.
+          prerelease: ${{ endsWith(github.ref_name, '-alpha') || endsWith(github.ref_name, '-beta') }}

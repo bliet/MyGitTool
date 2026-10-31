@@ -48,7 +48,7 @@ scripts/package-arch.sh                      # pacman package (.pkg.tar.zst) int
 MYGITTOOL_PERF_REPO=<big repo> cargo test --release -p infra-git --test performance -- --ignored --nocapture
 ```
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux (including a pacman package), Windows and macOS builds and publishes them as a GitHub release.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux (including a pacman package), Windows and macOS builds and publishes them as a GitHub release. The packages are named after the version in `Cargo.toml`, so bump it (and commit the updated `Cargo.lock`) before tagging; the workflow fails if the tag doesn't match `v<version>`. Versions ending in `-alpha` or `-beta` are published as pre-releases.
 
 Run fmt, clippy and the tests before you consider a change done.
 
