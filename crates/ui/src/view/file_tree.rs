@@ -1,14 +1,8 @@
 //! The changed-files list of the details column, as a tree or flat list.
 
+pub use application::FileViewMode;
 use domain::FileChange;
 use std::collections::BTreeMap;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FileViewMode {
-    #[default]
-    Tree,
-    Flat,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileRow {

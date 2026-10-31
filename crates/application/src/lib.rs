@@ -9,12 +9,14 @@ mod diff;
 mod file_diff;
 mod graph;
 mod history;
+mod layout;
 mod open_repository;
 mod ports;
 mod recent_repositories;
 mod refs;
 mod settings;
 mod sync;
+mod watch;
 mod work_tree;
 
 pub use branches::{
@@ -26,11 +28,14 @@ pub use diff::{is_binary, side_by_side};
 pub use file_diff::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
 pub use graph::{EdgeHalf, GraphEdge, GraphLayout, GraphRow};
 pub use history::{HistoryPager, HistoryRow, LoadHistory};
+pub use layout::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, RememberLayout};
 pub use open_repository::{OpenRepository, Startup};
 pub use ports::{
-    CredentialProvider, HistoryCursor, HistoryScope, Integration, LocateError, ProgressReporter,
-    ReadError, RecentRepositoriesStore, RemoteError, RemoteOperations, RepositoryLocator,
-    RepositoryReader, RepositoryWriter, Settings, SettingsStore, StorageError, WriteError,
+    CredentialProvider, DateFormat, FileViewMode, HistoryCursor, HistoryScope, Integration,
+    LayoutStore, LocateError, ProgressReporter, ReadError, RecentRepositoriesStore, RemoteError,
+    RemoteOperations, RepoChanges, RepoWatcher, RepositoryLocator, RepositoryReader,
+    RepositoryWriter, Settings, SettingsStore, StorageError, Theme, WatchError, WatchGuard,
+    WindowLayout, WriteError,
 };
 pub use recent_repositories::{DEFAULT_CAPACITY, RecentRepositories};
 pub use refs::{LoadBranches, RefIndex, RefLabel, RefLabelKind, RemoteBranches, RepositoryRefs};
@@ -39,4 +44,5 @@ pub use sync::{
     AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,
     PushDestination, PushPlan,
 };
+pub use watch::WatchRepository;
 pub use work_tree::LoadWorkTreeChanges;

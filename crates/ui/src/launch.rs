@@ -1,14 +1,50 @@
 use crate::components::App;
 use crate::state::AppState;
+use crate::view::settings::theme_script;
 use application::{
     AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
     Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
-    MergeIntoCurrent, OpenRepository, Pull, Push, RebaseCurrentOnto, RecentRepositories, Startup,
-    UserSettings,
+    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository, Pull, Push,
+    RebaseCurrentOnto, RecentRepositories, RememberLayout, Settings, Startup, Theme, UserSettings,
+    WatchRepository, WindowLayout,
 };
+use dioxus::desktop::tao::window::Theme as NativeTheme;
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+use std::sync::LazyLock;
 
-pub(crate) const STYLE: &str = include_str!("../assets/main.css");
+/// The stylesheet: the light colours and all rules, then the dark colours
+/// for the dark theme and for the system theme on a dark system.
+static STYLE: LazyLock<String> = LazyLock::new(|| {
+    let base = include_str!("../assets/main.css");
+    let dark = include_str!("../assets/dark.css");
+    format!(
+        "{base}
+:root[data-theme=\"light\"] {{ color-scheme: light; }}
+:root[data-theme=\"dark\"] {{ color-scheme: dark; {dark} }}
+@media (prefers-color-scheme: dark) {{
+  :root:not([data-theme=\"light\"]) {{ {dark} }}
+}}"
+    )
+});
+
+/// The `<head>` additions of every window: the stylesheet, and the theme
+/// applied before the first paint.
+pub(crate) fn custom_head(theme: Theme) -> String {
+    format!(
+        "<style>{}</style><script>{}</script>",
+        *STYLE,
+        theme_script(theme)
+    )
+}
+
+/// The theme of the window decorations; `None` follows the system.
+pub(crate) fn native_theme(theme: Theme) -> Option<NativeTheme> {
+    match theme {
+        Theme::System => None,
+        Theme::Light => Some(NativeTheme::Light),
+        Theme::Dark => Some(NativeTheme::Dark),
+    }
+}
 
 /// The use cases the UI needs, built by the composition root.
 #[derive(Clone)]
@@ -21,6 +57,8 @@ pub struct Services {
     pub load_work_tree_changes: LoadWorkTreeChanges,
     pub compute_file_diff: ComputeFileDiff,
     pub user_settings: UserSettings,
+    pub remember_layout: RememberLayout,
+    pub watch_repository: WatchRepository,
     pub fetch: Fetch,
     pub pull: Pull,
     pub push: Push,
@@ -34,21 +72,40 @@ pub struct Services {
     pub load_ongoing: LoadOngoing,
 }
 
+/// What the app starts with: the settings and the window layout, loaded
+/// before the window opens so it appears with the right size and theme.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Initial {
+    pub settings: Settings,
+    pub layout: WindowLayout,
+}
+
 /// Opens the main window and runs the UI until it is closed.
 pub fn launch(services: Services, startup: Startup) {
-    let state = AppState::from_startup(startup);
+    let mut state = AppState::from_startup(startup);
+    let settings = services.user_settings.load().unwrap_or_else(|err| {
+        state.error = Some(format!("Settings: {err}"));
+        Settings::default()
+    });
+    let layout = services.remember_layout.load().unwrap_or_else(|err| {
+        state.error = Some(format!("Window layout: {err}"));
+        WindowLayout::default()
+    });
     let window = WindowBuilder::new()
         .with_title(state.window_title())
-        .with_inner_size(LogicalSize::new(1400.0, 900.0))
-        .with_min_inner_size(LogicalSize::new(800.0, 500.0));
+        .with_inner_size(LogicalSize::new(layout.width, layout.height))
+        .with_min_inner_size(LogicalSize::new(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT))
+        .with_maximized(layout.maximized)
+        .with_theme(native_theme(settings.theme));
     let config = Config::new()
         .with_window(window)
         .with_menu(None)
-        .with_custom_head(format!("<style>{STYLE}</style>"));
+        .with_custom_head(custom_head(settings.theme));
 
     dioxus::LaunchBuilder::desktop()
         .with_cfg(config)
         .with_context(services)
         .with_context(state)
+        .with_context(Initial { settings, layout })
         .launch(App);
 }

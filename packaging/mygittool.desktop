@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=MyGitTool
+Comment=Desktop Git client
+Exec=mygittool %f
+Terminal=false
+Categories=Development;RevisionControl;

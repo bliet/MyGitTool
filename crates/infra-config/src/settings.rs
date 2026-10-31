@@ -1,5 +1,5 @@
 use crate::json_file;
-use application::{Settings, SettingsStore, StorageError};
+use application::{DateFormat, FileViewMode, Settings, SettingsStore, StorageError, Theme};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -13,12 +13,16 @@ pub struct JsonSettingsStore {
 }
 
 /// Every field has a default, so files written by older or newer versions
-/// still load.
+/// still load. Choices are stored as names, and a name this version does not
+/// know falls back to the default.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct SettingsFile {
     version: u32,
     indent_guides: bool,
+    theme: String,
+    date_format: String,
+    file_view: String,
 }
 
 impl Default for SettingsFile {
@@ -32,7 +36,57 @@ impl From<Settings> for SettingsFile {
         Self {
             version: FORMAT_VERSION,
             indent_guides: settings.indent_guides,
+            theme: theme_name(settings.theme).to_owned(),
+            date_format: date_format_name(settings.date_format).to_owned(),
+            file_view: file_view_name(settings.file_view).to_owned(),
         }
+    }
+}
+
+impl From<SettingsFile> for Settings {
+    fn from(file: SettingsFile) -> Self {
+        Self {
+            indent_guides: file.indent_guides,
+            theme: match file.theme.as_str() {
+                "light" => Theme::Light,
+                "dark" => Theme::Dark,
+                _ => Theme::System,
+            },
+            date_format: match file.date_format.as_str() {
+                "day-month-year" => DateFormat::DayMonthYear,
+                "month-day-year" => DateFormat::MonthDayYear,
+                "relative" => DateFormat::Relative,
+                _ => DateFormat::Iso,
+            },
+            file_view: match file.file_view.as_str() {
+                "flat" => FileViewMode::Flat,
+                _ => FileViewMode::Tree,
+            },
+        }
+    }
+}
+
+fn theme_name(theme: Theme) -> &'static str {
+    match theme {
+        Theme::System => "system",
+        Theme::Light => "light",
+        Theme::Dark => "dark",
+    }
+}
+
+fn date_format_name(format: DateFormat) -> &'static str {
+    match format {
+        DateFormat::Iso => "iso",
+        DateFormat::DayMonthYear => "day-month-year",
+        DateFormat::MonthDayYear => "month-day-year",
+        DateFormat::Relative => "relative",
+    }
+}
+
+fn file_view_name(mode: FileViewMode) -> &'static str {
+    match mode {
+        FileViewMode::Tree => "tree",
+        FileViewMode::Flat => "flat",
     }
 }
 
@@ -55,9 +109,7 @@ impl JsonSettingsStore {
 impl SettingsStore for JsonSettingsStore {
     fn load(&self) -> Result<Option<Settings>, StorageError> {
         let file: Option<SettingsFile> = json_file::read(&self.file)?;
-        Ok(file.map(|f| Settings {
-            indent_guides: f.indent_guides,
-        }))
+        Ok(file.map(Settings::from))
     }
 
     fn save(&self, settings: &Settings) -> Result<(), StorageError> {

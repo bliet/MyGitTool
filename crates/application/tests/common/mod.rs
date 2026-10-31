@@ -2,7 +2,8 @@
 #![allow(dead_code)]
 
 use application::{
-    LocateError, RecentRepositoriesStore, RepositoryLocator, Settings, SettingsStore, StorageError,
+    LayoutStore, LocateError, RecentRepositoriesStore, RepoChanges, RepoWatcher, RepositoryLocator,
+    Settings, SettingsStore, StorageError, WatchError, WatchGuard, WindowLayout,
 };
 use domain::RepositoryInfo;
 use std::collections::HashMap;
@@ -510,5 +511,70 @@ impl SettingsStore for FakeSettingsStore {
     fn save(&self, settings: &Settings) -> Result<(), StorageError> {
         *self.settings.lock().unwrap() = Some(*settings);
         Ok(())
+    }
+}
+
+/// An in-memory layout store; `None` until something is saved.
+#[derive(Default)]
+pub struct FakeLayoutStore {
+    pub layout: Mutex<Option<WindowLayout>>,
+}
+
+impl LayoutStore for FakeLayoutStore {
+    fn load(&self) -> Result<Option<WindowLayout>, StorageError> {
+        Ok(*self.layout.lock().unwrap())
+    }
+
+    fn save(&self, layout: &WindowLayout) -> Result<(), StorageError> {
+        *self.layout.lock().unwrap() = Some(*layout);
+        Ok(())
+    }
+}
+
+type ChangeCallback = Box<dyn Fn(RepoChanges) + Send>;
+
+/// A watcher that keeps the callback of the last watch, so a test can
+/// report changes through it. Watching `failing` fails.
+#[derive(Default)]
+pub struct FakeWatcher {
+    pub callback: std::sync::Arc<Mutex<Option<ChangeCallback>>>,
+    pub watched: Mutex<Vec<PathBuf>>,
+    pub failing: bool,
+}
+
+impl FakeWatcher {
+    pub fn report(&self, changes: RepoChanges) {
+        if let Some(callback) = &*self.callback.lock().unwrap() {
+            callback(changes);
+        }
+    }
+}
+
+impl RepoWatcher for FakeWatcher {
+    fn watch(
+        &self,
+        repo: &RepositoryInfo,
+        on_change: ChangeCallback,
+    ) -> Result<WatchGuard, WatchError> {
+        if self.failing {
+            return Err(WatchError("no watches left".into()));
+        }
+        self.watched.lock().unwrap().push(repo.root().to_path_buf());
+        *self.callback.lock().unwrap() = Some(on_change);
+        // Dropping the guard forgets the callback, like a stopped watch.
+        let callback = self.callback.clone();
+        Ok(WatchGuard::new(DropFn(Some(Box::new(move || {
+            *callback.lock().unwrap() = None;
+        })))))
+    }
+}
+
+struct DropFn(Option<Box<dyn FnOnce() + Send>>);
+
+impl Drop for DropFn {
+    fn drop(&mut self) {
+        if let Some(f) = self.0.take() {
+            f();
+        }
     }
 }

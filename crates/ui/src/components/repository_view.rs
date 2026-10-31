@@ -4,14 +4,19 @@ use super::history::HistoryColumn;
 use super::operation_views::{ContextMenu, DialogHost, OngoingBanner, OperationStatus};
 use super::operations::Operations;
 use super::session::Session;
-use super::update_settings;
+use super::settings_dialog::SettingsOpen;
+use super::window_layout::LayoutKeeper;
+use super::{blocking, update_settings};
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::columns::{ColumnLayout, Side};
 use crate::view::operation::Action;
-use application::{FetchTarget, Settings};
+use application::{FetchTarget, RepoChanges, Settings, WatchGuard};
 use dioxus::prelude::*;
 use domain::RepositoryInfo;
+use std::cell::RefCell;
+use std::rc::Rc;
+use tokio::sync::mpsc;
 
 /// Keys handled app-wide. The listener calls `preventDefault`, so `F5` never
 /// reloads the web view. The web view's own context menu is suppressed; the
@@ -56,9 +61,59 @@ pub fn RepositoryView(
     let busy = operations.is_running();
     let push_case = services.push.clone();
     let guides = settings.read().indent_guides;
-    let mut layout = use_signal(ColumnLayout::default);
+    let SettingsOpen(mut settings_open) = use_context::<SettingsOpen>();
+    let keeper = use_context::<LayoutKeeper>();
+    let mut layout = keeper.columns;
     let mut total_width = use_signal(|| 1400.0);
     let mut drag = use_signal(|| None::<Drag>);
+
+    // New commits show their files the way the settings say, also after
+    // the setting changes; the toggle in the details column is for now.
+    let file_view = use_memo(move || settings.read().file_view);
+    use_effect(move || {
+        let mut mode = session.file_mode;
+        mode.set(file_view());
+    });
+
+    // Refresh on changes made outside the app. The guard lives as long as
+    // this view; an operation in progress refreshes when it is done.
+    let watch = use_hook(|| Rc::new(RefCell::new(None::<WatchGuard>)));
+    use_hook({
+        let watch_repository = services.watch_repository.clone();
+        let repo = repo.clone();
+        move || {
+            spawn(async move {
+                let (sender, mut changes) = mpsc::unbounded_channel::<RepoChanges>();
+                let started = blocking(move || {
+                    watch_repository.watch(&repo, move |change| {
+                        let _ = sender.send(change);
+                    })
+                })
+                .await;
+                match started {
+                    Ok(Ok(guard)) => *watch.borrow_mut() = Some(guard),
+                    Ok(Err(err)) => {
+                        let mut app = app;
+                        app.write().error = Some(format!("Automatic refresh is off: {err}"));
+                        return;
+                    }
+                    Err(message) => {
+                        let mut app = app;
+                        app.write().error = Some(message);
+                        return;
+                    }
+                }
+                while let Some(mut change) = changes.recv().await {
+                    while let Ok(more) = changes.try_recv() {
+                        change = change.merge(more);
+                    }
+                    if !operations.is_running() {
+                        session.refresh_after(change);
+                    }
+                }
+            });
+        }
+    });
 
     use_hook(move || {
         session.refresh();
@@ -69,7 +124,9 @@ pub fn RepositoryView(
                     "F5" => session.refresh(),
                     // Escape closes the innermost thing first.
                     "Escape" => {
-                        if operations.dialog.peek().is_some() {
+                        if *settings_open.peek() {
+                            settings_open.set(false);
+                        } else if operations.dialog.peek().is_some() {
                             operations.dismiss();
                         } else if operations.menu.peek().is_some() {
                             let mut menu = operations.menu;
@@ -86,10 +143,11 @@ pub fn RepositoryView(
 
     let name = repo.name();
     let location = repo.root().display().to_string();
-    let template = layout.read().grid_template();
+    let shown = layout.read().fitted(*total_width.read());
+    let template = shown.grid_template();
     let dragging = drag.read().is_some();
     let mut start_drag = move |side: Side, x: f64| {
-        let start_width = layout.peek().width(side);
+        let start_width = layout.peek().fitted(*total_width.peek()).width(side);
         drag.set(Some(Drag {
             side,
             start_x: x,
@@ -139,6 +197,7 @@ pub fn RepositoryView(
                 "┊ Guides"
             }
             button { title: "Refresh (F5)", onclick: move |_| session.refresh(), "⟳ Refresh" }
+            button { title: "Settings", onclick: move |_| settings_open.set(true), "⚙ Settings" }
             button { onclick: move |_| on_pick.call(()), "Open…" }
             button { onclick: move |_| on_close.call(()), "Close" }
         }
@@ -159,8 +218,16 @@ pub fn RepositoryView(
                 let total = *total_width.peek();
                 layout.write().resize(active.side, width, total);
             },
-            onmouseup: move |_| drag.set(None),
-            onmouseleave: move |_| drag.set(None),
+            onmouseup: move |_| {
+                if drag.take().is_some() {
+                    keeper.save();
+                }
+            },
+            onmouseleave: move |_| {
+                if drag.take().is_some() {
+                    keeper.save();
+                }
+            },
             BranchesColumn {}
             div {
                 class: "splitter",

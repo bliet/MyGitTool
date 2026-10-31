@@ -1,10 +1,11 @@
 use super::diff_window::DiffWindows;
+use super::now_seconds;
 use super::session::{DetailsState, Session};
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::file_tree::{FileViewMode, file_rows};
-use crate::view::format::full_date;
-use application::RefLabelKind;
+use crate::view::format::details_date;
+use application::{DateFormat, RefLabelKind, Settings};
 use dioxus::prelude::*;
 use domain::{CommitDetails, DiffSource, FileChange, Signature};
 use std::cell::RefCell;
@@ -68,6 +69,8 @@ pub fn DetailsColumn() -> Element {
 #[component]
 fn CommitView(details: CommitDetails) -> Element {
     let session = use_context::<Session>();
+    let date_format = use_context::<Signal<Settings>>().read().date_format;
+    let now = now_seconds();
     let commit = &details.commit;
     let id = commit.id;
     let short = id.short();
@@ -110,13 +113,13 @@ fn CommitView(details: CommitDetails) -> Element {
                     }
                 }
                 dt { "Author" }
-                dd { {person(&commit.author)} }
+                dd { {person(&commit.author, date_format, now)} }
                 dt { "Committer" }
                 dd {
                     if same_person {
                         span { class: "muted", "same as author" }
                     } else {
-                        {person(&details.committer)}
+                        {person(&details.committer, date_format, now)}
                     }
                 }
                 if !labels.is_empty() {
@@ -147,9 +150,9 @@ fn CommitView(details: CommitDetails) -> Element {
     }
 }
 
-fn person(signature: &Signature) -> Element {
+fn person(signature: &Signature, format: DateFormat, now: i64) -> Element {
     let who = format!("{} <{}>", signature.name, signature.email);
-    let when = full_date(signature.time);
+    let when = details_date(signature.time, format, now);
     rsx! {
         div { class: "selectable", "{who}" }
         div { class: "muted selectable", "{when}" }
@@ -190,9 +193,7 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
     };
     let mut mode = session.file_mode;
     let current = *mode.read();
-    let guides = use_context::<Signal<application::Settings>>()
-        .read()
-        .indent_guides;
+    let guides = use_context::<Signal<Settings>>().read().indent_guides;
     let rows = file_rows(&changes, current);
     let additions: usize = changes.iter().map(|c| c.additions).sum();
     let deletions: usize = changes.iter().map(|c| c.deletions).sum();

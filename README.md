@@ -2,12 +2,12 @@
 
 A fast, cross-platform desktop Git client written in Rust that shows a repository, its branches and its remotes at a glance.
 
-> **Status:** early development. The app opens a repository and shows an empty three-column window; nothing is displayed in it yet. See [ROADMAP.md](ROADMAP.md) for what's planned and what's done.
+> **Status:** early development. Viewing, the diff window, remote and branch operations work; staging and committing do not exist yet. See [ROADMAP.md](ROADMAP.md) for what's planned and what's done.
 
 > [!WARNING]
 > **This tool is developed by AI.** The code, tests and documentation are written by [Claude Code](https://claude.com/claude-code). Use it at your own risk, especially for operations that modify your repository (pull, push, merge, rebase, delete branch).
 
-## Features (planned)
+## Features
 
 The window has three columns:
 
@@ -25,11 +25,26 @@ The window has three columns:
 | `F6` | Jump to the previous change |
 | `Esc` | Close the diff window |
 
-Other planned features:
+Also:
 - Fetch, pull and push use your SSH agent, your default SSH keys or your git credential helper. If none of those work, the app asks for credentials and does not store them.
 - Pull follows your `pull.rebase` / `pull.ff` git config.
-- The view refreshes automatically when the repository changes outside the app.
+- The view refreshes automatically when the repository changes outside the app (`F5` refreshes by hand).
+- Settings: light, dark or system theme, the date format, and whether changed files show as a tree or a flat list. The window size and column widths are remembered.
 - Runs on Linux, Windows and macOS.
+
+### Large repositories
+
+The history opens instantly even with a million commits when the repository has a commit-graph file. Git writes one during `git gc` and `git maintenance`. You can also write it yourself:
+
+```sh
+git commit-graph write --reachable
+```
+
+Without one, the whole history has to be read before the first commit appears, which takes several seconds on a repository the size of the Linux kernel.
+
+## Download
+
+Packages for Linux (`.tar.gz`), Windows (`.zip`) and macOS (`.dmg`) are attached to each [GitHub release](../../releases). They are not signed, so macOS and Windows warn before the first start. On Linux, the binary needs WebKitGTK 4.1 (`libwebkit2gtk-4.1-0` on Debian/Ubuntu).
 
 ## Usage
 
@@ -56,6 +71,8 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libxdo-dev
 ```
 
 On Arch, install `webkit2gtk-4.1` and `xdotool`. Windows and macOS need no extra packages.
+
+`scripts/package.sh` builds a release package for the current platform into `dist/`.
 
 ## Tech stack
 

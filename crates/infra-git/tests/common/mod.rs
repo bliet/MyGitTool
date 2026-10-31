@@ -24,6 +24,8 @@ pub struct TestRepo {
     dir: TempDir,
     repo: Repository,
     commits: i64,
+    /// Added to every commit time, see [`TestRepo::shift_clock`].
+    clock: i64,
 }
 
 impl TestRepo {
@@ -55,6 +57,7 @@ impl TestRepo {
             dir,
             repo,
             commits: 0,
+            clock: 0,
         }
     }
 
@@ -77,6 +80,7 @@ impl TestRepo {
             dir,
             repo,
             commits: 100,
+            clock: 0,
         }
     }
 
@@ -169,7 +173,12 @@ impl TestRepo {
 
     /// Creates a merge commit of HEAD and the local branch `other`. The tree
     /// is HEAD's, which is all the history tests need.
-    pub fn merge(mut self, other: &str, message: &str) -> Self {
+    pub fn merge(self, other: &str, message: &str) -> Self {
+        self.merge_all(&[other], message)
+    }
+
+    /// Like [`merge`](Self::merge) with several branches, e.g. an octopus merge.
+    pub fn merge_all(mut self, others: &[&str], message: &str) -> Self {
         let signature = self.next_signature();
         {
             let repo = &self.repo;
@@ -178,12 +187,17 @@ impl TestRepo {
                 .expect("HEAD")
                 .peel_to_commit()
                 .expect("HEAD commit");
-            let other = repo
-                .find_branch(other, BranchType::Local)
-                .expect("find branch")
-                .get()
-                .peel_to_commit()
-                .expect("branch commit");
+            let mut parents = vec![head.clone()];
+            for other in others {
+                let commit = repo
+                    .find_branch(other, BranchType::Local)
+                    .expect("find branch")
+                    .get()
+                    .peel_to_commit()
+                    .expect("branch commit");
+                parents.push(commit);
+            }
+            let parents: Vec<_> = parents.iter().collect();
             let tree = head.tree().expect("HEAD tree");
             repo.commit(
                 Some("HEAD"),
@@ -191,10 +205,33 @@ impl TestRepo {
                 &signature,
                 message,
                 &tree,
-                &[&head, &other],
+                &parents,
             )
             .expect("merge commit");
         }
+        self
+    }
+
+    /// Moves the clock of the following commits by `seconds`, e.g. back in
+    /// time to make a commit older than its parent.
+    pub fn shift_clock(mut self, seconds: i64) -> Self {
+        self.clock += seconds;
+        self
+    }
+
+    /// Writes a commit-graph with the git command line, split into layers
+    /// if `split`. Layers are only added for commits not covered yet.
+    pub fn write_commit_graph(self, split: bool) -> Self {
+        let mut args = vec!["commit-graph", "write", "--reachable"];
+        if split {
+            args.push("--split=no-merge");
+        }
+        let status = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(self.path())
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git commit-graph write failed");
         self
     }
 
@@ -327,7 +364,7 @@ impl TestRepo {
 
     fn next_signature(&mut self) -> Signature<'static> {
         self.commits += 1;
-        let time = Time::new(BASE_TIME + self.commits * 60, 0);
+        let time = Time::new(BASE_TIME + self.commits * 60 + self.clock, 0);
         Signature::new("Test User", "test@example.com", &time).expect("signature")
     }
 }

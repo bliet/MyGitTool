@@ -58,11 +58,11 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 ## M5: Polish
 
-- [ ] File system watcher (`notify`) on `.git/` and the work tree, debounced to about 300 ms, triggering an automatic refresh
-- [ ] Performance pass on large repos (Linux kernel–sized history)
-- [ ] Settings: theme (light, dark or system), date format, default file view (tree or flat)
-- [ ] Remember the window layout (column widths, window size)
-- [ ] Packaged release builds for Linux, Windows and macOS
+- [x] File system watcher (`notify`) on `.git/` and the work tree, debounced to about 300 ms, triggering an automatic refresh
+- [x] Performance pass on large repos (Linux kernel–sized history)
+- [x] Settings: theme (light, dark or system), date format, default file view (tree or flat)
+- [x] Remember the window layout (column widths, window size)
+- [x] Packaged release builds for Linux, Windows and macOS
 
 ## Later
 

@@ -5,7 +5,10 @@ use crate::launch::Services;
 use crate::view::branch_tree::BranchItem;
 use crate::view::file_tree::FileViewMode;
 use crate::view::history::{HistoryList, PAGE_SIZE, ROW_HEIGHT, Selection, scroll_to_reveal};
-use application::{HistoryPager, HistoryScope, OngoingState, RefIndex, RepositoryRefs};
+use crate::view::refresh::Reload;
+use application::{
+    HistoryPager, HistoryScope, OngoingState, RefIndex, RepoChanges, RepositoryRefs,
+};
 use dioxus::prelude::*;
 use domain::{CommitDetails, CommitId, FileChange, RepositoryInfo};
 use std::collections::HashSet;
@@ -102,27 +105,61 @@ impl Session {
         });
     }
 
-    async fn load_refs(mut self) {
+    /// Reloads what `changes` (made outside the app) can have affected. A
+    /// large history is only walked again if a ref moved.
+    pub fn refresh_after(self, changes: RepoChanges) {
+        let reload = Reload::after(changes);
+        spawn(async move {
+            let refs_changed = reload.refs && self.load_refs().await;
+            if reload.work_tree {
+                self.load_work_tree().await;
+            }
+            if reload.ongoing {
+                self.load_ongoing().await;
+            }
+            if refs_changed {
+                self.reset_history().await;
+            }
+        });
+    }
+
+    /// Returns whether the refs differ from the ones shown before.
+    async fn load_refs(mut self) -> bool {
         let load = self.services.peek().load_branches.clone();
         let repo = self.repo.peek().clone();
         match blocking(move || load.load(&repo)).await {
             Ok(Ok(refs)) => {
+                if self.refs_error.peek().is_some() {
+                    self.refs_error.set(None);
+                }
+                if self.refs.peek().as_ref() == Some(&refs) {
+                    return false;
+                }
                 self.ref_index.set(RefIndex::new(&refs));
                 self.refs.set(Some(refs));
-                self.refs_error.set(None);
+                true
             }
-            Ok(Err(err)) => self.refs_error.set(Some(err.to_string())),
-            Err(message) => self.refs_error.set(Some(message)),
+            Ok(Err(err)) => {
+                self.refs_error.set(Some(err.to_string()));
+                false
+            }
+            Err(message) => {
+                self.refs_error.set(Some(message));
+                false
+            }
         }
     }
 
     async fn load_work_tree(mut self) {
         let load = self.services.peek().load_work_tree_changes.clone();
         let repo = self.repo.peek().clone();
-        match blocking(move || load.load(&repo)).await {
-            Ok(Ok(changes)) => self.work_tree.set(changes),
-            // The history still works without the uncommitted row.
-            Ok(Err(_)) | Err(_) => self.work_tree.set(Vec::new()),
+        // The history still works without the uncommitted row.
+        let changes = match blocking(move || load.load(&repo)).await {
+            Ok(Ok(changes)) => changes,
+            Ok(Err(_)) | Err(_) => Vec::new(),
+        };
+        if *self.work_tree.peek() != changes {
+            self.work_tree.set(changes);
         }
         if *self.selection.peek() == Some(Selection::Uncommitted)
             && self.work_tree.peek().is_empty()
@@ -135,10 +172,13 @@ impl Session {
     async fn load_ongoing(mut self) {
         let load = self.services.peek().load_ongoing.clone();
         let repo = self.repo.peek().clone();
-        match blocking(move || load.load(&repo)).await {
-            Ok(Ok(state)) => self.ongoing.set(state),
-            // The banner is only a hint; the operations check again.
-            Ok(Err(_)) | Err(_) => self.ongoing.set(None),
+        // The banner is only a hint; the operations check again.
+        let state = match blocking(move || load.load(&repo)).await {
+            Ok(Ok(state)) => state,
+            Ok(Err(_)) | Err(_) => None,
+        };
+        if *self.ongoing.peek() != state {
+            self.ongoing.set(state);
         }
     }
 

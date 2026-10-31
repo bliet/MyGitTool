@@ -27,6 +27,14 @@ impl Default for ColumnLayout {
 }
 
 impl ColumnLayout {
+    /// Remembered widths, each at least `MIN_SIDE`.
+    pub fn restored(left: f64, right: f64) -> Self {
+        Self {
+            left: left.max(MIN_SIDE),
+            right: right.max(MIN_SIDE),
+        }
+    }
+
     pub fn width(&self, side: Side) -> f64 {
         match side {
             Side::Left => self.left,
@@ -46,6 +54,24 @@ impl ColumnLayout {
         match side {
             Side::Left => self.left = width,
             Side::Right => self.right = width,
+        }
+    }
+
+    /// The widths to show in `total` pixels: if the middle column would get
+    /// less than `MIN_MIDDLE`, both sides give up width in proportion to
+    /// what they have beyond `MIN_SIDE`.
+    pub fn fitted(&self, total: f64) -> Self {
+        let excess = self.left + self.right + MIN_MIDDLE + 2.0 * SPLITTER - total;
+        let spare_left = self.left - MIN_SIDE;
+        let spare_right = self.right - MIN_SIDE;
+        let spare = spare_left + spare_right;
+        if excess <= 0.0 || spare <= 0.0 {
+            return *self;
+        }
+        let share = (excess / spare).min(1.0);
+        Self {
+            left: self.left - spare_left * share,
+            right: self.right - spare_right * share,
         }
     }
 

@@ -1,16 +1,20 @@
 //! Composition root: parses the command line, builds the adapters, injects
 //! them into the use cases and launches the UI.
 
+// Release builds on Windows are GUI apps without a console window.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use anyhow::Context;
 use application::{
     AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, DeleteBranch,
     Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
     MergeIntoCurrent, OpenRepository, Pull, Push, RebaseCurrentOnto, RecentRepositories,
-    UserSettings,
+    RememberLayout, UserSettings, WatchRepository,
 };
-use infra_config::{JsonRecentRepositoriesStore, JsonSettingsStore};
+use infra_config::{JsonLayoutStore, JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{
-    GitRemoteOperations, GitRepositoryLocator, GitRepositoryReader, GitRepositoryWriter,
+    GitRemoteOperations, GitRepoWatcher, GitRepositoryLocator, GitRepositoryReader,
+    GitRepositoryWriter,
 };
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -46,6 +50,8 @@ fn main() -> anyhow::Result<ExitCode> {
     ));
 
     let user_settings = UserSettings::new(Arc::new(JsonSettingsStore::in_config_dir(&config_dir)));
+    let remember_layout =
+        RememberLayout::new(Arc::new(JsonLayoutStore::in_config_dir(&config_dir)));
     let reader = Arc::new(GitRepositoryReader);
     let writer = Arc::new(GitRepositoryWriter);
     let remote = Arc::new(GitRemoteOperations);
@@ -63,6 +69,8 @@ fn main() -> anyhow::Result<ExitCode> {
             load_work_tree_changes: LoadWorkTreeChanges::new(reader.clone()),
             compute_file_diff: ComputeFileDiff::new(reader.clone()),
             user_settings,
+            remember_layout,
+            watch_repository: WatchRepository::new(Arc::new(GitRepoWatcher::default())),
             fetch: Fetch::new(reader.clone(), remote.clone()),
             pull: Pull::new(reader.clone(), writer.clone(), remote.clone()),
             push: Push::new(reader.clone(), writer.clone(), remote.clone()),

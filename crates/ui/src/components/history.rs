@@ -1,9 +1,10 @@
+use super::now_seconds;
 use super::operations::Operations;
 use super::session::{HISTORY_SCROLL_ID, Session, Viewport};
-use crate::view::format::short_date;
+use crate::view::format::history_date;
 use crate::view::history::{ROW_HEIGHT, Selection, visible_range};
 use crate::view::operation::commit_menu;
-use application::{EdgeHalf, GraphRow, RefLabel, RefLabelKind};
+use application::{EdgeHalf, GraphRow, RefLabel, RefLabelKind, Settings};
 use dioxus::prelude::*;
 
 /// Width of one graph lane in pixels.
@@ -33,6 +34,8 @@ pub fn HistoryColumn() -> Element {
     let filter = session.filter.read().clone();
     let error = session.history_error.read().clone();
     let ref_index = session.ref_index.read();
+    let date_format = use_context::<Signal<Settings>>().read().date_format;
+    let now = now_seconds();
 
     // Load the next page when the rendered rows approach the end.
     let commits_end = range.end.saturating_sub(offset);
@@ -115,7 +118,7 @@ pub fn HistoryColumn() -> Element {
                             let top = (index + offset) as f64 * ROW_HEIGHT;
                             let selected = selection == Some(Selection::Commit(id));
                             let labels = ref_index.labels(&id).to_vec();
-                            let date = short_date(row.commit.author.time);
+                            let date = history_date(row.commit.author.time, date_format, now);
                             let short = id.short();
                             rsx! {
                                 div {

@@ -8,3 +8,5 @@ pub mod file_tree;
 pub mod format;
 pub mod history;
 pub mod operation;
+pub mod refresh;
+pub mod settings;

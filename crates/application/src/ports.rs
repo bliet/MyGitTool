@@ -56,6 +56,69 @@ impl StorageError {
 pub struct Settings {
     /// Draw lines that show the indentation levels of tree views.
     pub indent_guides: bool,
+    pub theme: Theme,
+    pub date_format: DateFormat,
+    /// How the changed files of a commit are listed at first.
+    pub file_view: FileViewMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Theme {
+    /// Follow the operating system.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// How dates are shown, always in the timestamp's own UTC offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DateFormat {
+    /// `2023-11-14 22:13`
+    #[default]
+    Iso,
+    /// `14.11.2023 22:13`
+    DayMonthYear,
+    /// `11/14/2023 10:13 PM`
+    MonthDayYear,
+    /// `3 days ago`, with the full date in the details column.
+    Relative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FileViewMode {
+    #[default]
+    Tree,
+    Flat,
+}
+
+/// The size of the main window and its columns, in logical pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindowLayout {
+    pub width: f64,
+    pub height: f64,
+    pub maximized: bool,
+    pub left_column: f64,
+    pub right_column: f64,
+}
+
+impl Default for WindowLayout {
+    fn default() -> Self {
+        Self {
+            width: 1400.0,
+            height: 900.0,
+            maximized: false,
+            left_column: 260.0,
+            right_column: 380.0,
+        }
+    }
+}
+
+/// Persists the window layout.
+pub trait LayoutStore: Send + Sync {
+    /// Returns the stored layout, or `None` if nothing was stored yet.
+    fn load(&self) -> Result<Option<WindowLayout>, StorageError>;
+    fn save(&self, layout: &WindowLayout) -> Result<(), StorageError>;
 }
 
 /// Persists the user's settings.
@@ -270,6 +333,70 @@ pub enum RemoteError {
     #[error("{0}")]
     Backend(String),
 }
+
+/// What changed in a watched repository.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RepoChanges {
+    /// The Git directory changed: refs, HEAD, the index, a merge or rebase
+    /// state, and so on.
+    pub git_dir: bool,
+    /// A file in the work tree changed that Git does not ignore.
+    pub work_tree: bool,
+}
+
+impl RepoChanges {
+    pub const ALL: Self = Self {
+        git_dir: true,
+        work_tree: true,
+    };
+
+    pub fn any(&self) -> bool {
+        self.git_dir || self.work_tree
+    }
+
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            git_dir: self.git_dir || other.git_dir,
+            work_tree: self.work_tree || other.work_tree,
+        }
+    }
+}
+
+/// Watches repositories for changes made outside the app.
+pub trait RepoWatcher: Send + Sync {
+    /// Watches the Git directory and the work tree of `repo` until the
+    /// returned guard is dropped. `on_change` is called on a background
+    /// thread once a burst of changes has settled (debounced).
+    fn watch(
+        &self,
+        repo: &RepositoryInfo,
+        on_change: Box<dyn Fn(RepoChanges) + Send>,
+    ) -> Result<WatchGuard, WatchError>;
+}
+
+/// Keeps a watch running. Dropping it stops the watch.
+pub struct WatchGuard {
+    _watch: Box<dyn Send>,
+}
+
+impl WatchGuard {
+    /// A guard that stops the watch by dropping `watch`.
+    pub fn new(watch: impl Send + 'static) -> Self {
+        Self {
+            _watch: Box::new(watch),
+        }
+    }
+}
+
+impl std::fmt::Debug for WatchGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("WatchGuard")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("cannot watch the repository: {0}")]
+pub struct WatchError(pub String);
 
 /// A history walk that hands out commits page by page.
 pub trait HistoryCursor: Send {

@@ -7,39 +7,46 @@ mod operation_views;
 mod operations;
 mod repository_view;
 mod session;
+mod settings_dialog;
 mod welcome;
+mod window_layout;
 
-use crate::launch::Services;
+use crate::launch::{Initial, Services, native_theme};
 use crate::state::{AppState, Screen};
+use crate::view::settings::theme_script;
 use application::{Settings, StorageError};
 use diff_window::DiffWindows;
 use dioxus::prelude::*;
 use error_banner::ErrorBanner;
 use repository_view::RepositoryView;
+use settings_dialog::{SettingsDialog, SettingsOpen};
 use std::path::PathBuf;
 use welcome::Welcome;
+use window_layout::use_layout_keeper;
 
 #[component]
 pub fn App() -> Element {
     let services = use_context::<Services>();
-    let initial = use_context::<AppState>();
-    let mut state = use_context_provider(|| Signal::new(initial));
-    let mut settings = use_context_provider(|| Signal::new(Settings::default()));
+    let initial_state = use_context::<AppState>();
+    let initial = use_context::<Initial>();
+    let mut state = use_context_provider(|| Signal::new(initial_state));
+    let settings = use_context_provider(|| Signal::new(initial.settings));
     let diff_windows = use_context_provider(DiffWindows::default);
-
-    use_hook({
-        let user_settings = services.user_settings.clone();
-        move || {
-            spawn(async move {
-                match blocking(move || user_settings.load()).await {
-                    Ok(Ok(loaded)) => settings.set(loaded),
-                    Ok(Err(err)) => state.write().error = Some(format!("Settings: {err}")),
-                    Err(message) => state.write().error = Some(message),
-                }
-            });
-        }
+    use_context_provider(|| SettingsOpen(Signal::new(false)));
+    use_layout_keeper(&services, initial.layout);
+    use_drop({
+        let diff_windows = diff_windows.clone();
+        move || diff_windows.close_all()
     });
-    use_drop(move || diff_windows.close_all());
+
+    // The window starts with the stored theme; this follows later changes.
+    let theme = use_memo(move || settings.read().theme);
+    use_effect(move || {
+        let theme = theme();
+        document::eval(&theme_script(theme));
+        dioxus::desktop::window().set_theme(native_theme(theme));
+        diff_windows.set_theme(theme);
+    });
 
     // Load the recent list once. A repository opened at startup is recorded
     // first, which also returns the updated list.
@@ -106,6 +113,7 @@ pub fn App() -> Element {
                     }
                 },
             }
+            SettingsDialog {}
         }
     }
 }
@@ -153,6 +161,13 @@ fn apply_recent(
         Ok(Err(err)) => state.write().recent_failed(&err),
         Err(message) => state.write().error = Some(message),
     }
+}
+
+/// The current time in seconds since the epoch, for relative dates.
+pub(crate) fn now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
 }
 
 /// Runs a synchronous use case off the UI thread.

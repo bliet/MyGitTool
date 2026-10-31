@@ -20,9 +20,9 @@ app (binary, composition root)
 | Crate | Responsibility | May depend on |
 |---|---|---|
 | `crates/domain` | Pure types and rules: `Commit`, `CommitId`, `Branch` (local/remote), `Remote`, `Signature`, `FileChange`, `ChangeKind`, `DiffHunk`, `GraphLane`, the domain errors | `std` and small pure crates only (e.g. `thiserror`). **No I/O.** |
-| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`, `ContinueOperation`, `AbortOperation`, `LoadOngoing`, `UserSettings`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `SettingsStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `ProgressReporter`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
-| `crates/infra-git` | Adapters that implement the ports with `git2` (and `notify` for the watcher) | `application`, `domain`, `git2`, `notify` |
-| `crates/infra-config` | Adapters for app state in the user config dir (the recent-repositories list and the user settings as JSON) | `application`, `serde`, `directories` |
+| `crates/application` | Use cases (`OpenRepository`, `RecentRepositories`, `LoadBranches`, `LoadHistory`, `GetCommitDetails`, `LoadWorkTreeChanges`, `ComputeFileDiff`, `Fetch`, `Pull`, `Push`, `Checkout`, `CreateBranch`, `DeleteBranch`, `MergeIntoCurrent`, `RebaseCurrentOnto`, `ContinueOperation`, `AbortOperation`, `LoadOngoing`, `UserSettings`, `RememberLayout`, `WatchRepository`), **port traits** (`RepositoryLocator`, `RecentRepositoriesStore`, `SettingsStore`, `LayoutStore`, `RepositoryReader`, `RepositoryWriter`, `RemoteOperations`, `ProgressReporter`, `CredentialProvider`, `RepoWatcher`), graph-lane layout, diff alignment (`similar`) | `domain` |
+| `crates/infra-git` | Adapters that implement the ports with `git2` (and `notify` for the watcher). The history walk reads Git's commit-graph file itself when there is one, so the first page of a huge history appears without walking it all | `application`, `domain`, `git2`, `notify` |
+| `crates/infra-config` | Adapters for app state in the user config dir (the recent-repositories list, the user settings and the window layout as JSON) | `application`, `serde`, `directories` |
 | `crates/ui` | Dioxus components and view state. Calls use cases only, never git2. | `application`, `domain`, `dioxus` |
 | `crates/app` | `main`. Parses the CLI argument, builds the adapters, injects them into the use cases and launches the UI. | everything |
 
@@ -43,7 +43,11 @@ cargo run -p app -- <repo-path>              # run the app (binary: mygittool)
 cargo test --workspace                       # all tests
 cargo fmt --all --check                      # formatting (CI enforced)
 cargo clippy --workspace --all-targets -- -D warnings   # lints (CI enforced)
+scripts/package.sh                           # release package for this platform into dist/
+MYGITTOOL_PERF_REPO=<big repo> cargo test --release -p infra-git --test performance -- --ignored --nocapture
 ```
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux, Windows and macOS builds and publishes them as a GitHub release.
 
 Run fmt, clippy and the tests before you consider a change done.
 

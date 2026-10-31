@@ -1,12 +1,12 @@
-use crate::map;
+use crate::{history, map};
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
-    Branch, BranchKind, Commit, CommitDetails, CommitId, FastForward, FileChange, FileContent,
-    Head, OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking, Upstream,
+    Branch, BranchKind, CommitDetails, CommitId, FastForward, FileChange, FileContent, Head,
+    OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking, Upstream,
 };
 use git2::{
     BranchType, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
-    ReferenceType, Repository, RepositoryState, Sort, Status, StatusOptions, Tree,
+    ReferenceType, Repository, RepositoryState, Status, StatusOptions, Tree,
 };
 use std::fs;
 use std::io;
@@ -126,9 +126,7 @@ impl RepositoryReader for GitRepositoryReader {
         repo: &RepositoryInfo,
         scope: &HistoryScope,
     ) -> Result<Box<dyn HistoryCursor>, ReadError> {
-        let git = open(repo)?;
-        let ids = walk(&git, scope)?;
-        Ok(Box::new(GitHistoryCursor { git, ids, next: 0 }))
+        history::cursor(open(repo)?, scope)
     }
 
     fn commit_details(
@@ -484,58 +482,6 @@ fn remote_of(git: &Repository, refname: &str, name: &str) -> String {
     git.branch_remote_name(refname)
         .map(|buf| map::text(&buf))
         .unwrap_or_else(|_| name.split('/').next().unwrap_or(name).to_owned())
-}
-
-/// All commit ids of the scope in display order.
-///
-/// The walk runs to the end up front, because a topological sort has to see
-/// every commit anyway, and a `Revwalk` cannot outlive this call.
-fn walk(git: &Repository, scope: &HistoryScope) -> Result<Vec<Oid>, ReadError> {
-    let mut walk = git.revwalk().map_err(map::error)?;
-    walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)
-        .map_err(map::error)?;
-    match scope {
-        HistoryScope::All => {
-            if git.head().is_ok() {
-                walk.push_head().map_err(map::error)?;
-            }
-            for glob in ["refs/heads", "refs/remotes", "refs/tags"] {
-                walk.push_glob(glob).map_err(map::error)?;
-            }
-        }
-        HistoryScope::Ref(refname) => {
-            let reference = git
-                .find_reference(refname)
-                .map_err(|err| match err.code() {
-                    ErrorCode::NotFound => ReadError::RefNotFound(refname.clone()),
-                    _ => map::error(err),
-                })?;
-            let commit = reference.peel_to_commit().map_err(map::error)?;
-            walk.push(commit.id()).map_err(map::error)?;
-        }
-    }
-    walk.map(|oid| oid.map_err(map::error)).collect()
-}
-
-struct GitHistoryCursor {
-    git: Repository,
-    ids: Vec<Oid>,
-    next: usize,
-}
-
-impl HistoryCursor for GitHistoryCursor {
-    fn next_page(&mut self, max: usize) -> Result<Vec<Commit>, ReadError> {
-        let end = self.ids.len().min(self.next.saturating_add(max));
-        let page = self.ids[self.next..end]
-            .iter()
-            .map(|&oid| {
-                let commit = self.git.find_commit(oid).map_err(map::error)?;
-                Ok(map::commit(&commit))
-            })
-            .collect::<Result<Vec<_>, ReadError>>()?;
-        self.next = end;
-        Ok(page)
-    }
 }
 
 /// Converts a diff into file changes with line counts. Renames are detected.

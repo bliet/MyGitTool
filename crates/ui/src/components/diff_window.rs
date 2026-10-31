@@ -1,17 +1,18 @@
 //! The diff window: a separate desktop window per changed file.
 
 use super::blocking;
-use crate::launch::STYLE;
+use crate::launch::{custom_head, native_theme};
 use crate::view::diff::{
     DIFF_ROW_HEIGHT, DiffKey, Direction, Jump, Step, at_end_hint, content_width, format_size, jump,
     rows_on_screen, scroll_top_for, segments, side_class, side_labels, status, window_title,
 };
 use crate::view::history::visible_rows;
-use application::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
+use crate::view::settings::theme_script;
+use application::{ComputeFileDiff, MAX_DIFF_FILE_SIZE, Theme};
 use dioxus::desktop::{Config, LogicalSize, WeakDesktopContext, WindowBuilder};
 use dioxus::prelude::*;
 use domain::{DiffBody, DiffLine, DiffSource, FileChange, FileDiff, RepositoryInfo};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -43,12 +44,30 @@ const WINDOW_SCRIPT: &str = r#"
     await new Promise(() => {});
 "#;
 
-/// The open diff windows of the app. A `None` entry is a window that is
-/// still being created.
+/// The open diff windows of the app, and the theme they use. A `None` entry
+/// is a window that is still being created.
 #[derive(Clone, Default)]
-pub struct DiffWindows(Rc<RefCell<HashMap<DiffKey, Option<WeakDesktopContext>>>>);
+pub struct DiffWindows {
+    windows: Rc<RefCell<HashMap<DiffKey, Option<WeakDesktopContext>>>>,
+    theme: Rc<Cell<Theme>>,
+}
 
 impl DiffWindows {
+    /// Applies `theme` to the open windows and the ones opened later.
+    pub fn set_theme(&self, theme: Theme) {
+        if self.theme.replace(theme) == theme {
+            return;
+        }
+        let script = theme_script(theme);
+        for window in self.windows.borrow().values().flatten() {
+            if let Some(window) = window.upgrade() {
+                // A window that cannot run the script keeps its old theme.
+                let _ = window.webview.evaluate_script(&script);
+                window.window.set_theme(native_theme(theme));
+            }
+        }
+    }
+
     /// Opens the diff of `change`, or focuses its window if it is open.
     pub fn open(
         &self,
@@ -62,7 +81,7 @@ impl DiffWindows {
             source,
             path: change.path.clone(),
         };
-        match self.0.borrow().get(&key) {
+        match self.windows.borrow().get(&key) {
             Some(None) => return,
             Some(Some(weak)) => {
                 if let Some(window) = weak.upgrade() {
@@ -72,7 +91,7 @@ impl DiffWindows {
             }
             None => {}
         }
-        self.0.borrow_mut().insert(key.clone(), None);
+        self.windows.borrow_mut().insert(key.clone(), None);
 
         let title = window_title(&change.path, source);
         let dom = VirtualDom::new_with_props(
@@ -87,13 +106,14 @@ impl DiffWindows {
         let builder = WindowBuilder::new()
             .with_title(title)
             .with_inner_size(LogicalSize::new(1300.0, 850.0))
-            .with_min_inner_size(LogicalSize::new(500.0, 300.0));
+            .with_min_inner_size(LogicalSize::new(500.0, 300.0))
+            .with_theme(native_theme(self.theme.get()));
         let config = Config::new()
             .with_window(builder)
             .with_menu(None)
-            .with_custom_head(format!("<style>{STYLE}</style>"));
+            .with_custom_head(custom_head(self.theme.get()));
         let pending = dioxus::desktop::window().new_window(dom, config);
-        let windows = self.0.clone();
+        let windows = self.windows.clone();
         spawn(async move {
             match pending.try_resolve().await {
                 Ok(window) => {
@@ -110,7 +130,7 @@ impl DiffWindows {
 
     /// Closes every diff window, e.g. when the main window closes.
     pub fn close_all(&self) {
-        for weak in self.0.borrow_mut().drain().filter_map(|(_, w)| w) {
+        for weak in self.windows.borrow_mut().drain().filter_map(|(_, w)| w) {
             if let Some(window) = weak.upgrade() {
                 window.close();
             }

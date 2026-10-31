@@ -30,3 +30,8 @@ similar = "3.2.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
