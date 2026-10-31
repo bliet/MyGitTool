@@ -11,4 +11,5 @@ dioxus.workspace = true
 domain.workspace = true
 rfd.workspace = true
 arboard.workspace = true
+open.workspace = true
 tokio.workspace = true

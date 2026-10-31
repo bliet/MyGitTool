@@ -1,7 +1,7 @@
 //! The branch tree of the left column, flattened into rows.
 
 use application::RepositoryRefs;
-use domain::{Branch, BranchKind, CommitId};
+use domain::{Branch, BranchKind, CommitId, WebLink, web_link};
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +19,8 @@ pub struct BranchItem {
     pub upstream_gone: bool,
     /// The remote of a remote branch; `None` for a local branch.
     pub remote: Option<String>,
+    /// The branch's page on its hoster, for a remote branch on a known one.
+    pub web: Option<WebLink>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +31,8 @@ pub enum BranchRowKind {
         key: String,
         name: String,
         collapsed: bool,
+        /// The repository's page, for a remote on a known hoster.
+        web: Option<WebLink>,
     },
     Branch(BranchItem),
 }
@@ -60,7 +64,7 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
         kind: BranchRowKind::Section("Local"),
     }];
     let local: Vec<_> = refs.local.iter().map(|b| (b.name.as_str(), b)).collect();
-    push_tree(&mut rows, &build(&local), "local:", 0, collapsed);
+    push_tree(&mut rows, &build(&local), "local:", 0, collapsed, None);
 
     if !refs.remotes.is_empty() {
         rows.push(BranchRow {
@@ -77,6 +81,11 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
                 key: key.clone(),
                 name: group.remote.name.clone(),
                 collapsed: is_collapsed,
+                web: group
+                    .remote
+                    .url
+                    .as_deref()
+                    .and_then(|url| web_link(url, None)),
             },
         });
         if !is_collapsed {
@@ -91,6 +100,7 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
                 &format!("{key}:"),
                 1,
                 collapsed,
+                group.remote.url.as_deref(),
             );
         }
     }
@@ -125,6 +135,7 @@ fn push_tree(
     prefix: &str,
     depth: usize,
     collapsed: &HashSet<String>,
+    remote_url: Option<&str>,
 ) {
     for (name, child) in &node.folders {
         let key = format!("{prefix}{name}");
@@ -135,21 +146,29 @@ fn push_tree(
                 key: key.clone(),
                 name: (*name).to_owned(),
                 collapsed: is_collapsed,
+                web: None,
             },
         });
         if !is_collapsed {
-            push_tree(rows, child, &format!("{key}/"), depth + 1, collapsed);
+            push_tree(
+                rows,
+                child,
+                &format!("{key}/"),
+                depth + 1,
+                collapsed,
+                remote_url,
+            );
         }
     }
     for (label, branch) in &node.branches {
         rows.push(BranchRow {
             depth,
-            kind: BranchRowKind::Branch(item(label, branch)),
+            kind: BranchRowKind::Branch(item(label, branch, remote_url)),
         });
     }
 }
 
-fn item(label: &str, branch: &Branch) -> BranchItem {
+fn item(label: &str, branch: &Branch, remote_url: Option<&str>) -> BranchItem {
     let remote = match &branch.kind {
         BranchKind::Remote { remote } => Some(remote.clone()),
         BranchKind::Local { .. } => None,
@@ -170,6 +189,10 @@ fn item(label: &str, branch: &Branch) -> BranchItem {
         ahead,
         behind,
         upstream_gone,
+        web: remote
+            .as_ref()
+            .and(remote_url)
+            .and_then(|url| web_link(url, Some(branch.name_on_remote()))),
         remote,
     }
 }

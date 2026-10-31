@@ -137,6 +137,16 @@ impl Operations {
     /// need more input open a dialog first.
     pub fn start(mut self, action: Action) {
         self.menu.set(None);
+        // Opening a page is no repository operation, so it never waits.
+        let action = match action {
+            Action::OpenInBrowser(web) => {
+                if let Err(err) = open::that_detached(&web.url) {
+                    self.app.write().error = Some(format!("Cannot open {}: {err}", web.url));
+                }
+                return;
+            }
+            action => action,
+        };
         if self.running.peek().is_some() {
             return;
         }
@@ -144,6 +154,8 @@ impl Operations {
         let repo = self.session.repo.peek().clone();
         let label = running_label(&action);
         match action {
+            // Handled above.
+            Action::OpenInBrowser(_) => {}
             Action::Fetch(target) => self.spawn(async move {
                 let fetch = services.fetch;
                 let result = self

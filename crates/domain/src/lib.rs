@@ -5,6 +5,7 @@ mod branch_name;
 mod change;
 mod commit;
 mod diff;
+mod hosting;
 mod remote;
 mod repository;
 mod state;
@@ -17,6 +18,7 @@ pub use diff::{
     DiffBody, DiffHunk, DiffLine, DiffRow, DiffSource, FileContent, FileDiff, Revision, RowKind,
     SideBySide,
 };
+pub use hosting::{Hoster, WebLink, web_link};
 pub use remote::{Credential, CredentialRequest, FastForward, Progress, PullConfig, Tracking};
 pub use repository::RepositoryInfo;
 pub use state::{DirtyWorkTree, OngoingOperation};

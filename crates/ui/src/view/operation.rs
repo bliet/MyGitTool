@@ -3,11 +3,13 @@
 use crate::view::branch_tree::BranchItem;
 use crate::view::diff::format_size;
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress};
+use domain::{CommitId, OngoingOperation, Progress, WebLink};
 
 /// An operation the user can start from a menu or the toolbar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
+    /// Opens a page of the repository's hoster in the browser.
+    OpenInBrowser(WebLink),
     Fetch(FetchTarget),
     /// Pulls the current branch.
     Pull,
@@ -113,7 +115,10 @@ pub fn branch_menu(branch: &BranchItem) -> Vec<MenuEntry> {
         )];
         entries.extend(integrate());
         entries.push(separated(create));
-        entries.push(separated(remote_menu(remote).remove(0)));
+        entries.push(separated(fetch_remote(remote)));
+        if let Some(web) = &branch.web {
+            entries.push(open_in_browser(web));
+        }
         entries.push(separated(entry(
             format!("Delete {on_remote} from {remote}…"),
             Action::DeleteRemote {
@@ -155,11 +160,24 @@ pub fn branch_menu(branch: &BranchItem) -> Vec<MenuEntry> {
 }
 
 /// The context menu of a remote.
-pub fn remote_menu(remote: &str) -> Vec<MenuEntry> {
-    vec![entry(
+pub fn remote_menu(remote: &str, web: Option<&WebLink>) -> Vec<MenuEntry> {
+    let mut entries = vec![fetch_remote(remote)];
+    entries.extend(web.map(open_in_browser));
+    entries
+}
+
+fn fetch_remote(remote: &str) -> MenuEntry {
+    entry(
         format!("Fetch {remote}"),
         Action::Fetch(FetchTarget::Remote(remote.to_owned())),
-    )]
+    )
+}
+
+fn open_in_browser(web: &WebLink) -> MenuEntry {
+    entry(
+        format!("Open on {}", web.hoster),
+        Action::OpenInBrowser(web.clone()),
+    )
 }
 
 /// The context menu of a commit in the history.
@@ -176,6 +194,7 @@ pub fn commit_menu(id: CommitId) -> Vec<MenuEntry> {
 /// What the status strip says while `action` runs.
 pub fn running_label(action: &Action) -> String {
     match action {
+        Action::OpenInBrowser(web) => format!("Opening {}…", web.url),
         Action::Fetch(FetchTarget::All) => "Fetching all remotes…".to_owned(),
         Action::Fetch(FetchTarget::Remote(remote)) => format!("Fetching {remote}…"),
         Action::Fetch(FetchTarget::Branch(branch)) => {

@@ -1,9 +1,10 @@
 use super::operations::Operations;
 use super::session::Session;
 use crate::view::branch_tree::{BranchItem, BranchRowKind, branch_rows, remote_of_folder};
-use crate::view::operation::{branch_menu, remote_menu};
+use crate::view::operation::{Action, branch_menu, remote_menu};
 use application::Settings;
 use dioxus::prelude::*;
+use domain::WebLink;
 
 /// Indentation per tree level in pixels.
 const INDENT: usize = 14;
@@ -32,15 +33,16 @@ pub fn BranchesColumn() -> Element {
                         BranchRowKind::Section(title) => rsx! {
                             li { class: "tree-section", "{title}" }
                         },
-                        BranchRowKind::Folder { key, name, collapsed: is_collapsed } => rsx! {
+                        BranchRowKind::Folder { key, name, collapsed: is_collapsed, web } => rsx! {
                             li {
                                 class: "tree-row folder",
                                 title: if remote_of_folder(&key).is_some() { "Right-click to fetch" } else { "" },
                                 oncontextmenu: {
                                     let remote = remote_of_folder(&key).map(str::to_owned);
+                                    let web = web.clone();
                                     move |event: MouseEvent| {
                                         if let Some(remote) = &remote {
-                                            consume_context::<Operations>().open_menu(&event, remote_menu(remote));
+                                            consume_context::<Operations>().open_menu(&event, remote_menu(remote, web.as_ref()));
                                         }
                                     }
                                 },
@@ -53,6 +55,9 @@ pub fn BranchesColumn() -> Element {
                                 },
                                 span { class: "twisty", if is_collapsed { "▸" } else { "▾" } }
                                 span { class: "label", "{name}" }
+                                if let Some(web) = web.clone() {
+                                    OpenInBrowserButton { web }
+                                }
                             }
                         },
                         BranchRowKind::Branch(item) => rsx! {
@@ -119,6 +124,28 @@ fn BranchRow(item: BranchItem, depth: usize, selected: bool) -> Element {
             if let Some(tracking) = tracking {
                 span { class: "tracking", "{tracking}" }
             }
+            if let Some(web) = item.web.clone() {
+                OpenInBrowserButton { web }
+            }
+        }
+    }
+}
+
+/// Opens a page on the remote's hoster; shown while the row is hovered.
+#[component]
+fn OpenInBrowserButton(web: WebLink) -> Element {
+    let title = format!("Open on {}\n{}", web.hoster, web.url);
+    rsx! {
+        button {
+            class: "icon open-web",
+            title: "{title}",
+            onclick: move |event| {
+                // The row would select or collapse on the click.
+                event.stop_propagation();
+                consume_context::<Operations>().start(Action::OpenInBrowser(web.clone()));
+            },
+            ondoubleclick: move |event| event.stop_propagation(),
+            "↗"
         }
     }
 }

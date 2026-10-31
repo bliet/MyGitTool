@@ -1,5 +1,5 @@
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress};
+use domain::{CommitId, OngoingOperation, Progress, web_link};
 use ui::view::branch_tree::{BranchItem, remote_key, remote_of_folder};
 use ui::view::operation::{
     Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
@@ -22,6 +22,7 @@ fn local(name: &str, is_head: bool) -> BranchItem {
         behind: None,
         upstream_gone: false,
         remote: None,
+        web: None,
     }
 }
 
@@ -36,6 +37,7 @@ fn remote(remote: &str, name: &str) -> BranchItem {
         behind: None,
         upstream_gone: false,
         remote: Some(remote.into()),
+        web: None,
     }
 }
 
@@ -138,10 +140,10 @@ fn menus_group_entries_with_separators() {
 #[test]
 fn remotes_fetch_and_commits_branch() {
     assert_eq!(
-        actions(remote_menu("origin")),
+        actions(remote_menu("origin", None)),
         [Action::Fetch(FetchTarget::Remote("origin".into()))]
     );
-    assert_eq!(remote_menu("origin")[0].label, "Fetch origin");
+    assert_eq!(remote_menu("origin", None)[0].label, "Fetch origin");
     let id = CommitId::from_bytes([0xab; 20]);
     assert_eq!(
         actions(commit_menu(id)),
@@ -291,4 +293,27 @@ fn the_banner_explains_the_ongoing_operation() {
     );
     assert!(can_continue(OngoingOperation::Rebase));
     assert!(!can_continue(OngoingOperation::Revert));
+}
+
+#[test]
+fn remotes_on_a_known_hoster_can_be_opened_in_the_browser() {
+    let web = web_link("git@github.com:owner/repo.git", None).unwrap();
+    let menu = remote_menu("origin", Some(&web));
+    assert_eq!(menu.len(), 2);
+    assert_eq!(menu[1].label, "Open on GitHub");
+    assert_eq!(menu[1].action, Action::OpenInBrowser(web));
+
+    let branch_web = web_link("git@github.com:owner/repo.git", Some("fix/x")).unwrap();
+    let branch = BranchItem {
+        web: Some(branch_web.clone()),
+        ..remote("origin", "fix/x")
+    };
+    let menu = branch_menu(&branch);
+    let last = menu.last().unwrap();
+    assert!(
+        menu.iter()
+            .any(|e| e.action == Action::OpenInBrowser(branch_web.clone()))
+    );
+    // Deleting stays the last entry.
+    assert!(matches!(last.action, Action::DeleteRemote { .. }));
 }

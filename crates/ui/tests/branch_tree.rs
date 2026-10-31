@@ -135,3 +135,47 @@ fn items_carry_tracking_information() {
     assert_eq!(remote.label, "x");
     assert_eq!(remote.refname, "refs/remotes/origin/fix/x");
 }
+
+#[test]
+fn remotes_on_known_hosters_link_to_their_pages() {
+    let mut refs = refs();
+    refs.remotes[0].remote.url = Some("git@github.com:owner/repo.git".into());
+    let rows = branch_rows(&refs, &HashSet::new());
+    let folder_web = rows.iter().find_map(|row| match &row.kind {
+        BranchRowKind::Folder { name, web, .. } if name == "origin" => Some(web.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        folder_web.flatten().map(|w| w.url).as_deref(),
+        Some("https://github.com/owner/repo")
+    );
+    let branch_urls: Vec<String> = rows
+        .iter()
+        .filter_map(|row| match &row.kind {
+            BranchRowKind::Branch(item) => item.web.as_ref().map(|w| w.url.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        branch_urls,
+        [
+            "https://github.com/owner/repo/tree/fix/x",
+            "https://github.com/owner/repo/tree/main"
+        ]
+    );
+}
+
+#[test]
+fn local_branches_and_unknown_hosts_have_no_link() {
+    let mut refs = refs();
+    refs.remotes[0].remote.url = Some("git@example.com:owner/repo.git".into());
+    let linked = branch_rows(&refs, &HashSet::new())
+        .into_iter()
+        .filter(|row| match &row.kind {
+            BranchRowKind::Folder { web, .. } => web.is_some(),
+            BranchRowKind::Branch(item) => item.web.is_some(),
+            BranchRowKind::Section(_) => false,
+        })
+        .count();
+    assert_eq!(linked, 0);
+}
