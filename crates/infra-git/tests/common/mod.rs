@@ -18,6 +18,8 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Fixed base for commit timestamps (2023-11-14), so tests are deterministic.
+/// Likewise, every repository sets `core.autocrlf=false`, so a machine that
+/// converts line endings (e.g. Git for Windows) cannot change file contents.
 const BASE_TIME: i64 = 1_700_000_000;
 
 pub struct TestRepo {
@@ -52,6 +54,9 @@ impl TestRepo {
             config
                 .set_str("user.email", "test@example.com")
                 .expect("set user.email");
+            config
+                .set_bool("core.autocrlf", false)
+                .expect("set core.autocrlf");
         }
         Self {
             dir,
@@ -75,7 +80,13 @@ impl TestRepo {
             config
                 .set_str("user.email", "other@example.com")
                 .expect("set user.email");
+            config
+                .set_bool("core.autocrlf", false)
+                .expect("set core.autocrlf");
         }
+        // The clone checked its files out with the machine's line endings.
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .expect("check out again");
         Self {
             dir,
             repo,
