@@ -74,8 +74,8 @@ pub fn SettingsDialog() -> Element {
                         }
                     }
                     div { class: "field",
-                        span { class: "field-label", "Changed files at first" }
-                        div { class: "toggle", role: "radiogroup", aria_label: "Changed files at first",
+                        span { class: "field-label", "Changed files" }
+                        div { class: "toggle", role: "radiogroup", aria_label: "Changed files",
                             for (mode, label) in FILE_VIEWS {
                                 button {
                                     key: "{label}",

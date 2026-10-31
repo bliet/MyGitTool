@@ -58,7 +58,7 @@ pub struct Settings {
     pub indent_guides: bool,
     pub theme: Theme,
     pub date_format: DateFormat,
-    /// How the changed files of a commit are listed at first.
+    /// How the changed files of a commit are listed.
     pub file_view: FileViewMode,
 }
 

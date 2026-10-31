@@ -3,7 +3,6 @@
 use super::blocking;
 use crate::launch::Services;
 use crate::view::branch_tree::BranchItem;
-use crate::view::file_tree::FileViewMode;
 use crate::view::history::{HistoryList, PAGE_SIZE, ROW_HEIGHT, Selection, scroll_to_reveal};
 use crate::view::refresh::Reload;
 use application::{
@@ -55,7 +54,6 @@ pub struct Session {
     pub selection: Signal<Option<Selection>>,
     pub selected_branch: Signal<Option<String>>,
     pub details: Signal<DetailsState>,
-    pub file_mode: Signal<FileViewMode>,
     pub collapsed: Signal<HashSet<String>>,
     pub viewport: Signal<Viewport>,
 }
@@ -78,7 +76,6 @@ impl Session {
             selection: Signal::new(None),
             selected_branch: Signal::new(None),
             details: Signal::new(DetailsState::Empty),
-            file_mode: Signal::new(FileViewMode::default()),
             collapsed: Signal::new(HashSet::new()),
             viewport: Signal::new(Viewport {
                 scroll_top: 0.0,

@@ -1,6 +1,6 @@
 use super::diff_window::DiffWindows;
-use super::now_seconds;
 use super::session::{DetailsState, Session};
+use super::{now_seconds, update_settings};
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::file_tree::{FileViewMode, file_rows};
@@ -191,9 +191,21 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
             change,
         );
     };
-    let mut mode = session.file_mode;
-    let current = *mode.read();
-    let guides = use_context::<Signal<Settings>>().read().indent_guides;
+    let app = use_context::<Signal<AppState>>();
+    let settings = use_context::<Signal<Settings>>();
+    let Settings {
+        file_view: current,
+        indent_guides: guides,
+        ..
+    } = *settings.read();
+    // The toggle is the file view setting, so it sticks and the settings
+    // dialog shows the same choice.
+    let set_mode = use_callback({
+        let services = use_context::<Services>();
+        move |mode: FileViewMode| {
+            update_settings(&services, settings, app, |s| s.file_view = mode);
+        }
+    });
     let rows = file_rows(&changes, current);
     let additions: usize = changes.iter().map(|c| c.additions).sum();
     let deletions: usize = changes.iter().map(|c| c.deletions).sum();
@@ -211,12 +223,12 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
             div { class: "toggle",
                 button {
                     class: if current == FileViewMode::Tree { "active" } else { "" },
-                    onclick: move |_| mode.set(FileViewMode::Tree),
+                    onclick: move |_| set_mode.call(FileViewMode::Tree),
                     "Tree"
                 }
                 button {
                     class: if current == FileViewMode::Flat { "active" } else { "" },
-                    onclick: move |_| mode.set(FileViewMode::Flat),
+                    onclick: move |_| set_mode.call(FileViewMode::Flat),
                     "Flat"
                 }
             }

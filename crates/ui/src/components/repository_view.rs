@@ -67,14 +67,6 @@ pub fn RepositoryView(
     let total_width = keeper.window_width;
     let mut drag = use_signal(|| None::<Drag>);
 
-    // New commits show their files the way the settings say, also after
-    // the setting changes; the toggle in the details column is for now.
-    let file_view = use_memo(move || settings.read().file_view);
-    use_effect(move || {
-        let mut mode = session.file_mode;
-        mode.set(file_view());
-    });
-
     // Refresh on changes made outside the app. The guard lives as long as
     // this view; an operation in progress refreshes when it is done.
     let watch = use_hook(|| Rc::new(RefCell::new(None::<WatchGuard>)));
