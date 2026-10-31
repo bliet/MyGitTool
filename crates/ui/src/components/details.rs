@@ -221,7 +221,8 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
             update_settings(&services, settings, app, |s| s.file_view = mode);
         }
     });
-    let rows = file_rows(&changes, current);
+    let mut collapsed_dirs = session.collapsed_dirs;
+    let rows = file_rows(&changes, current, &collapsed_dirs.read());
     let additions: usize = changes.iter().map(|c| c.additions).sum();
     let deletions: usize = changes.iter().map(|c| c.deletions).sum();
     let count_label = match changes.len() {
@@ -252,8 +253,21 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
             for (row, indent) in rows.into_iter().map(|r| { let indent = 8 + r.depth * INDENT; (r, indent) }) {
                 match row.change.map(|i| &changes[i]) {
                     None => rsx! {
-                        li { class: "file dir", style: "padding-left: {indent}px; --depth: {row.depth};",
-                            span { class: "status" }
+                        li {
+                            class: "file dir",
+                            style: "padding-left: {indent}px; --depth: {row.depth};",
+                            title: if row.collapsed { "Click to expand" } else { "Click to collapse" },
+                            aria_expanded: "{!row.collapsed}",
+                            onclick: {
+                                let dir = row.dir.clone();
+                                move |_| {
+                                    let mut set = collapsed_dirs.write();
+                                    if !set.remove(&dir) {
+                                        set.insert(dir.clone());
+                                    }
+                                }
+                            },
+                            span { class: "status twisty", if row.collapsed { "▸" } else { "▾" } }
                             span { class: "path", "{row.name}/" }
                         }
                     },

@@ -58,6 +58,9 @@ pub struct Session {
     /// Whether the body of the commit message is hidden in the details
     /// column. It applies to every commit, so it sticks while browsing.
     pub message_collapsed: Signal<bool>,
+    /// Collapsed directories of the changed-files tree, by full path. They
+    /// stay collapsed in other commits that change the same directory.
+    pub collapsed_dirs: Signal<HashSet<String>>,
     pub viewport: Signal<Viewport>,
 }
 
@@ -81,6 +84,7 @@ impl Session {
             details: Signal::new(DetailsState::Empty),
             collapsed: Signal::new(HashSet::new()),
             message_collapsed: Signal::new(false),
+            collapsed_dirs: Signal::new(HashSet::new()),
             viewport: Signal::new(Viewport {
                 scroll_top: 0.0,
                 height: 800.0,

@@ -424,7 +424,9 @@ button.copy { padding: 0 4px; font-size: 12px; }
   white-space: nowrap;
 }
 .file .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.file.dir { cursor: pointer; }
 .file.dir .path { color: var(--fg-muted); }
+.file.dir .twisty { color: var(--fg-muted); font-size: 10px; text-align: center; }
 .file .status {
   width: 14px;
   text-align: center;

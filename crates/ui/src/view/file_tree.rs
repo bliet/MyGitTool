@@ -2,7 +2,7 @@
 
 pub use application::FileViewMode;
 use domain::FileChange;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileRow {
@@ -12,9 +12,20 @@ pub struct FileRow {
     pub name: String,
     /// The index into the changes for a file; `None` for a directory.
     pub change: Option<usize>,
+    /// The full path of a directory, which identifies it for collapsing;
+    /// empty for a file.
+    pub dir: String,
+    /// Whether a directory is collapsed, hiding what is inside.
+    pub collapsed: bool,
 }
 
-pub fn file_rows(changes: &[FileChange], mode: FileViewMode) -> Vec<FileRow> {
+/// The rows of the changed-files list. In tree mode, the contents of the
+/// directories whose full paths are in `collapsed` are left out.
+pub fn file_rows(
+    changes: &[FileChange],
+    mode: FileViewMode,
+    collapsed: &HashSet<String>,
+) -> Vec<FileRow> {
     match mode {
         FileViewMode::Flat => {
             let mut order: Vec<usize> = (0..changes.len()).collect();
@@ -25,6 +36,8 @@ pub fn file_rows(changes: &[FileChange], mode: FileViewMode) -> Vec<FileRow> {
                     depth: 0,
                     name: changes[i].path.clone(),
                     change: Some(i),
+                    dir: String::new(),
+                    collapsed: false,
                 })
                 .collect()
         }
@@ -42,7 +55,7 @@ pub fn file_rows(changes: &[FileChange], mode: FileViewMode) -> Vec<FileRow> {
                 }
             }
             let mut rows = Vec::new();
-            push_dir(&mut rows, &root, 0);
+            push_dir(&mut rows, &root, 0, "", collapsed);
             rows
         }
     }
@@ -54,7 +67,13 @@ struct Dir {
     files: BTreeMap<String, usize>,
 }
 
-fn push_dir(rows: &mut Vec<FileRow>, dir: &Dir, depth: usize) {
+fn push_dir(
+    rows: &mut Vec<FileRow>,
+    dir: &Dir,
+    depth: usize,
+    prefix: &str,
+    collapsed: &HashSet<String>,
+) {
     for (name, child) in &dir.dirs {
         // Compress chains of directories that only contain one directory.
         let mut name = name.clone();
@@ -66,18 +85,26 @@ fn push_dir(rows: &mut Vec<FileRow>, dir: &Dir, depth: usize) {
             name = format!("{name}/{sub}");
             child = next;
         }
+        let path = format!("{prefix}{name}");
+        let is_collapsed = collapsed.contains(&path);
         rows.push(FileRow {
             depth,
             name,
             change: None,
+            dir: path.clone(),
+            collapsed: is_collapsed,
         });
-        push_dir(rows, child, depth + 1);
+        if !is_collapsed {
+            push_dir(rows, child, depth + 1, &format!("{path}/"), collapsed);
+        }
     }
     for (name, &index) in &dir.files {
         rows.push(FileRow {
             depth,
             name: name.clone(),
             change: Some(index),
+            dir: String::new(),
+            collapsed: false,
         });
     }
 }
