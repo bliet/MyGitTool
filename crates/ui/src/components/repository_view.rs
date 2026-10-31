@@ -64,7 +64,7 @@ pub fn RepositoryView(
     let SettingsOpen(mut settings_open) = use_context::<SettingsOpen>();
     let keeper = use_context::<LayoutKeeper>();
     let mut layout = keeper.columns;
-    let mut total_width = use_signal(|| 1400.0);
+    let total_width = keeper.window_width;
     let mut drag = use_signal(|| None::<Drag>);
 
     // New commits show their files the way the settings say, also after
@@ -206,11 +206,6 @@ pub fn RepositoryView(
         div {
             class: if dragging { "columns dragging" } else { "columns" },
             style: "grid-template-columns: {template};",
-            onresize: move |event| {
-                if let Ok(size) = event.data().get_border_box_size() {
-                    total_width.set(size.width);
-                }
-            },
             onmousemove: move |event| {
                 let Some(active) = *drag.peek() else { return };
                 let x = event.client_coordinates().x;

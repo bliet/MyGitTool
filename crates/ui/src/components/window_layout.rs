@@ -15,6 +15,10 @@ pub struct LayoutKeeper {
     services: Signal<Services>,
     app: Signal<AppState>,
     pub columns: Signal<ColumnLayout>,
+    /// The current inner width of the window. The columns span all of it,
+    /// so their room is known without measuring them, which would feed
+    /// their own widths back into the measurement.
+    pub window_width: Signal<f64>,
     /// The last size of the window while it was neither maximized nor
     /// minimized, so a maximized window comes back with its normal size.
     normal_size: Signal<(f64, f64)>,
@@ -58,14 +62,22 @@ impl LayoutKeeper {
 pub fn use_layout_keeper(services: &Services, initial: WindowLayout) -> LayoutKeeper {
     let app = use_context::<Signal<AppState>>();
     let services = services.clone();
-    let keeper = use_context_provider(move || LayoutKeeper {
-        services: Signal::new(services),
-        app,
-        columns: Signal::new(ColumnLayout::restored(
-            initial.left_column,
-            initial.right_column,
-        )),
-        normal_size: Signal::new((initial.width, initial.height)),
+    let keeper = use_context_provider(move || {
+        let desktop = window();
+        let width = desktop
+            .inner_size()
+            .to_logical::<f64>(desktop.scale_factor())
+            .width;
+        LayoutKeeper {
+            services: Signal::new(services),
+            app,
+            columns: Signal::new(ColumnLayout::restored(
+                initial.left_column,
+                initial.right_column,
+            )),
+            window_width: Signal::new(width),
+            normal_size: Signal::new((initial.width, initial.height)),
+        }
     });
     let main = use_hook(|| window().window.id());
     use_wry_event_handler(move |event, _| {
@@ -81,10 +93,17 @@ pub fn use_layout_keeper(services: &Services, initial: WindowLayout) -> LayoutKe
         match event {
             WindowEvent::Resized(size) => {
                 let desktop = window();
-                if desktop.is_maximized() || desktop.is_minimized() {
+                let size = size.to_logical::<f64>(desktop.scale_factor());
+                if desktop.is_minimized() {
                     return;
                 }
-                let size = size.to_logical::<f64>(desktop.scale_factor());
+                let mut window_width = keeper.window_width;
+                if *window_width.peek() != size.width {
+                    window_width.set(size.width);
+                }
+                if desktop.is_maximized() {
+                    return;
+                }
                 let mut normal_size = keeper.normal_size;
                 normal_size.set((size.width, size.height));
             }
