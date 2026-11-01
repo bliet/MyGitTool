@@ -100,14 +100,16 @@ fn unstages_back_to_head_and_keeps_the_work_tree() {
 
 #[test]
 fn unstaging_takes_paths_literally() {
+    // As a glob, `a[b].txt` would match `ab.txt` too. (`*` and `?` would
+    // show it as well, but Windows does not allow them in file names.)
     let repo = TestRepo::new()
-        .commit("a*.txt", "1\n")
+        .commit("a[b].txt", "1\n")
         .commit("ab.txt", "1\n")
-        .write("a*.txt", "2\n")
+        .write("a[b].txt", "2\n")
         .write("ab.txt", "2\n")
-        .stage("a*.txt")
+        .stage("a[b].txt")
         .stage("ab.txt");
-    unstage(&repo, &["a*.txt"]);
+    unstage(&repo, &["a[b].txt"]);
     assert_eq!(summary(&status(&repo).staged), ["M ab.txt"]);
 }
 
