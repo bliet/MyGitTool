@@ -3,8 +3,9 @@ use application::{Integration, RepositoryWriter, WriteError};
 use domain::{CommitId, RepositoryInfo};
 use git2::build::CheckoutBuilder;
 use git2::{
-    BranchType, Commit, Delta, DiffOptions, ErrorCode, Index, IndexEntry, IndexTime, MergeOptions,
-    Rebase, RebaseOptions, Repository, RepositoryState, ResetType, Signature,
+    ApplyLocation, BranchType, Commit, Delta, Diff, DiffOptions, ErrorCode, Index, IndexEntry,
+    IndexTime, MergeOptions, Rebase, RebaseOptions, Repository, RepositoryState, ResetType,
+    Signature, StashApplyOptions, StashFlags,
 };
 use std::path::Path;
 
@@ -349,6 +350,58 @@ impl RepositoryWriter for GitRepositoryWriter {
             )
             .map_err(error)?;
         Ok(map::commit_id(id))
+    }
+
+    fn stash_save(
+        &self,
+        repo: &RepositoryInfo,
+        message: Option<&str>,
+        include_untracked: bool,
+    ) -> Result<(), WriteError> {
+        let mut git = open(repo)?;
+        let stasher = git.signature().map_err(error)?;
+        let flags = if include_untracked {
+            StashFlags::INCLUDE_UNTRACKED
+        } else {
+            StashFlags::DEFAULT
+        };
+        git.stash_save2(&stasher, message, Some(flags))
+            .map_err(error)?;
+        Ok(())
+    }
+
+    fn stash_apply(&self, repo: &RepositoryInfo, index: usize) -> Result<Integration, WriteError> {
+        let mut git = open(repo)?;
+        // Like `git stash apply`: conflicts are written into the files
+        // instead of stopping, and never overwrite other local changes.
+        let mut checkout = CheckoutBuilder::new();
+        checkout
+            .safe()
+            .allow_conflicts(true)
+            .conflict_style_merge(true);
+        let mut options = StashApplyOptions::new();
+        options.checkout_options(checkout);
+        git.stash_apply(index, Some(&mut options)).map_err(error)?;
+        let index = git.index().map_err(error)?;
+        if index.has_conflicts() {
+            return Ok(Integration::Conflicts(conflicts(&index)?));
+        }
+        Ok(Integration::Completed)
+    }
+
+    fn stash_drop(&self, repo: &RepositoryInfo, index: usize) -> Result<(), WriteError> {
+        let mut git = open(repo)?;
+        git.stash_drop(index).map_err(error)
+    }
+
+    fn apply_patch(&self, repo: &RepositoryInfo, patch: &[u8]) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let diff = Diff::from_buffer(patch)
+            .map_err(|err| WriteError::Backend(format!("not a valid patch: {}", err.message())))?;
+        git.apply(&diff, ApplyLocation::WorkDir, None)
+            .map_err(|err| {
+                WriteError::Backend(format!("the patch does not apply: {}", err.message()))
+            })
     }
 
     fn set_tracking(

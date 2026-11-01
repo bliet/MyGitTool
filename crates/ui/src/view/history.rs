@@ -21,6 +21,8 @@ pub const PAGE_SIZE: usize = 500;
 pub enum Selection {
     Uncommitted,
     Commit(CommitId),
+    /// A stash, chosen in the left column, by its commit.
+    Stash(CommitId),
 }
 
 /// The rows rendered for a scroll position, including the overscan.

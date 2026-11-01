@@ -122,6 +122,31 @@ pub fn DialogHost() -> Element {
                             }
                         }
                     },
+                    Dialog::SaveStash => rsx! {
+                        SaveStashForm {}
+                    },
+                    Dialog::ConfirmDropStash { stash } => rsx! {
+                        p { "The stashed changes are lost unless they were applied somewhere." }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary danger",
+                                onclick: move |_| operations.drop_stash(stash.clone()),
+                                "Drop {stash.name()}"
+                            }
+                        }
+                    },
+                    Dialog::StashConflicts { pop, files, .. } => rsx! {
+                        p { "These files have conflicts:" }
+                        FileList { files }
+                        p { class: "muted",
+                            "Resolve them, then stage the result to mark them resolved."
+                            if pop { " The stash was kept; drop it once you are done." }
+                        }
+                        div { class: "dialog-buttons",
+                            button { class: "primary", onclick: move |_| operations.dismiss(), "OK" }
+                        }
+                    },
                     Dialog::Conflicts { operation, files, .. } => rsx! {
                         p { "These files have conflicts:" }
                         FileList { files }
@@ -365,6 +390,45 @@ fn CredentialForm(request: CredentialRequest) -> Element {
         div { class: "dialog-buttons",
             button { onclick: move |_| operations.answer(None), "Cancel" }
             button { class: "primary", onclick: move |_| submit(), "OK" }
+        }
+    }
+}
+
+#[component]
+fn SaveStashForm() -> Element {
+    let operations = use_context::<Operations>();
+    let mut message = use_signal(String::new);
+    let mut include_untracked = use_signal(|| false);
+    let submit = move || operations.save_stash(message.peek().clone(), *include_untracked.peek());
+
+    rsx! {
+        div { class: "dialog-fields",
+            label { "Message (optional)"
+                input {
+                    r#type: "text",
+                    value: "{message}",
+                    placeholder: "Without a message, Git names it after the last commit",
+                    oninput: move |e| message.set(e.value()),
+                    onkeydown: move |e: KeyboardEvent| {
+                        if e.key() == Key::Enter {
+                            submit();
+                        }
+                    },
+                    onmounted: move |e| async move { let _ = e.set_focus(true).await; },
+                }
+            }
+            label { class: "checkbox",
+                input {
+                    r#type: "checkbox",
+                    checked: include_untracked(),
+                    onchange: move |e| include_untracked.set(e.checked()),
+                }
+                "Include untracked files"
+            }
+        }
+        div { class: "dialog-buttons",
+            button { onclick: move |_| operations.dismiss(), "Cancel" }
+            button { class: "primary", onclick: move |_| submit(), "Stash" }
         }
     }
 }

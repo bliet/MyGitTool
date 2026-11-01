@@ -187,3 +187,40 @@ fn staged_and_unstaged_diffs_split_at_the_index() {
         ["one", "two", "three"]
     );
 }
+
+#[test]
+fn the_work_tree_patch_applies_to_a_clean_copy() {
+    let committed = || {
+        TestRepo::new()
+            .commit("a.txt", "one\ntwo\n")
+            .commit("gone.txt", "bye\n")
+    };
+    let repo = committed()
+        .write("a.txt", "one\nTWO\n")
+        .stage("a.txt")
+        .write("a.txt", "one\nTWO\nthree\n")
+        .delete("gone.txt")
+        .write("dir/new.txt", "fresh\n");
+    let patch = GitRepositoryReader.work_tree_patch(&info(&repo)).unwrap();
+
+    let copy = committed();
+    let diff = git2::Diff::from_buffer(&patch).unwrap();
+    copy.git()
+        .apply(&diff, git2::ApplyLocation::WorkDir, None)
+        .unwrap();
+    let read = |file: &str| std::fs::read_to_string(copy.path().join(file)).ok();
+    assert_eq!(read("a.txt").as_deref(), Some("one\nTWO\nthree\n"));
+    assert_eq!(read("dir/new.txt").as_deref(), Some("fresh\n"));
+    assert_eq!(read("gone.txt"), None);
+}
+
+#[test]
+fn a_clean_work_tree_has_an_empty_patch() {
+    let repo = TestRepo::new().commit("a.txt", "1\n");
+    assert!(
+        GitRepositoryReader
+            .work_tree_patch(&info(&repo))
+            .unwrap()
+            .is_empty()
+    );
+}

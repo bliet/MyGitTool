@@ -207,3 +207,66 @@ fn staging_a_conflicted_file_resolves_it() {
     );
     assert_eq!(summary(&status(&repo).staged), ["M a.txt"]);
 }
+
+fn apply_patch() -> application::ApplyPatch {
+    application::ApplyPatch::new(Arc::new(GitRepositoryReader), Arc::new(GitRepositoryWriter))
+}
+
+#[test]
+fn a_created_patch_applies_unstaged_to_another_clone() {
+    let committed = || {
+        TestRepo::new()
+            .commit("a.txt", "one\n")
+            .commit("b.txt", "b\n")
+    };
+    let source = committed()
+        .write("a.txt", "one\ntwo\n")
+        .stage("a.txt")
+        .delete("b.txt")
+        .write("new.txt", "fresh\n");
+    let patch = application::CreatePatch::new(Arc::new(GitRepositoryReader))
+        .patch(&info(&source))
+        .unwrap();
+
+    let target = committed();
+    apply_patch().apply(&info(&target), &patch).unwrap();
+    let changes = status(&target);
+    assert!(changes.staged.is_empty());
+    assert_eq!(
+        summary(&changes.unstaged),
+        ["M a.txt", "D b.txt", "A new.txt"]
+    );
+}
+
+#[test]
+fn a_patch_that_does_not_fit_changes_nothing() {
+    let source = TestRepo::new()
+        .commit("a.txt", "one\n")
+        .commit("b.txt", "b\n")
+        .write("a.txt", "one\ntwo\n")
+        .write("b.txt", "B\n");
+    let patch = application::CreatePatch::new(Arc::new(GitRepositoryReader))
+        .patch(&info(&source))
+        .unwrap();
+
+    // `a.txt` differs here, so its hunk cannot apply; `b.txt` would.
+    let target = TestRepo::new()
+        .commit("a.txt", "other\n")
+        .commit("b.txt", "b\n");
+    let result = apply_patch().apply(&info(&target), &patch);
+    assert!(
+        matches!(&result, Err(OperationError::Write(err)) if err.to_string().contains("does not apply")),
+        "{result:?}"
+    );
+    assert!(status(&target).is_empty());
+}
+
+#[test]
+fn garbage_is_not_a_patch() {
+    let repo = TestRepo::new().commit("a.txt", "1\n");
+    let result = apply_patch().apply(&info(&repo), b"hello\n");
+    assert!(
+        matches!(result, Err(OperationError::Write(_))),
+        "{result:?}"
+    );
+}

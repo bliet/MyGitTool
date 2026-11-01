@@ -8,14 +8,17 @@ use crate::state::AppState;
 use crate::view::commit::{Staging, committed_notice};
 use crate::view::operation::{
     Action, MenuEntry, conflict_title, dirty_texts, integration_summary, running_label,
+    stash_applied,
 };
 use application::{
     CredentialProvider, IntegrationOutcome, OperationError, ProgressReporter, PushDestination,
-    PushPlan, RemoteError,
+    PushPlan, RemoteError, StashOutcome, WriteError,
 };
 use dioxus::dioxus_core::{Runtime, ScopeId, current_scope_id};
 use dioxus::prelude::*;
-use domain::{CommitId, Credential, CredentialRequest, FileChange, OngoingOperation, Progress};
+use domain::{
+    CommitId, Credential, CredentialRequest, FileChange, OngoingOperation, Progress, Stash,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -88,6 +91,17 @@ pub enum Dialog {
     ConfirmDeleteRemoteTag {
         remote: String,
         tag: String,
+    },
+    /// Asks for the message of a new stash.
+    SaveStash,
+    ConfirmDropStash {
+        stash: Stash,
+    },
+    /// Applying the stash left conflicts in `files`; a pop kept the stash.
+    StashConflicts {
+        stash: Stash,
+        pop: bool,
+        files: Vec<String>,
     },
 }
 
@@ -264,6 +278,32 @@ impl Operations {
                     .await;
                 self.integrated("Rebase", result);
             }),
+            Action::SaveStash => self.dialog.set(Some(Dialog::SaveStash)),
+            Action::ApplyStash { stash, pop } => self.spawn(async move {
+                let apply = services.apply_stash;
+                let result = {
+                    let stash = stash.clone();
+                    self.run(label, move |_, _| {
+                        if pop {
+                            apply.pop(&repo, &stash)
+                        } else {
+                            apply.apply(&repo, &stash)
+                        }
+                    })
+                    .await
+                };
+                if let Some(Ok(StashOutcome::Conflicts(files))) = result {
+                    self.dialog
+                        .set(Some(Dialog::StashConflicts { stash, pop, files }));
+                    self.session.refresh();
+                    return;
+                }
+                let what = if pop { "Pop stash" } else { "Apply stash" };
+                self.finish(what, result, |_| stash_applied(&stash, pop));
+            }),
+            Action::DropStash { stash } => {
+                self.dialog.set(Some(Dialog::ConfirmDropStash { stash }));
+            }
         };
     }
 
@@ -467,6 +507,109 @@ impl Operations {
                 draft.set(String::new());
             }
             self.finish("Commit", result, |id| committed_notice(id, &message));
+        });
+    }
+
+    /// Stashes the local changes from the stash dialog.
+    pub fn save_stash(mut self, message: String, include_untracked: bool) {
+        self.dialog.set(None);
+        let save = self.services.peek().save_stash.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let result = self
+                .run(running_label(&Action::SaveStash), move |_, _| {
+                    save.save(&repo, &message, include_untracked)
+                })
+                .await;
+            self.finish("Stash", result, |()| "Stashed the local changes".to_owned());
+        });
+    }
+
+    /// Asks where to save a patch of the uncommitted changes, then writes it.
+    pub fn create_patch(self) {
+        if self.running.peek().is_some() {
+            return;
+        }
+        let create = self.services.peek().create_patch.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .set_title("Save patch")
+                .set_directory(repo.root())
+                .set_file_name(format!("{}.patch", repo.name()))
+                .add_filter("Patch", &["patch", "diff"])
+                .save_file()
+                .await;
+            let Some(file) = picked else {
+                return;
+            };
+            let path = file.path().to_path_buf();
+            let shown = path.display().to_string();
+            let result = self
+                .run("Creating the patch…".to_owned(), move |_, _| {
+                    let patch = create.patch(&repo)?;
+                    std::fs::write(&path, patch).map_err(|err| {
+                        OperationError::Write(WriteError::Backend(format!(
+                            "cannot write {}: {err}",
+                            path.display()
+                        )))
+                    })
+                })
+                .await;
+            self.finish("Create patch", result, |()| {
+                format!("Saved the patch to {shown}")
+            });
+        });
+    }
+
+    /// Asks for a patch file and applies it to the work tree.
+    pub fn apply_patch(self) {
+        if self.running.peek().is_some() {
+            return;
+        }
+        let apply = self.services.peek().apply_patch.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let picked = rfd::AsyncFileDialog::new()
+                .set_title("Apply patch")
+                .set_directory(repo.root())
+                .add_filter("Patch", &["patch", "diff"])
+                .pick_file()
+                .await;
+            let Some(file) = picked else {
+                return;
+            };
+            let path = file.path().to_path_buf();
+            let name = file.file_name();
+            let result = self
+                .run(format!("Applying {name}…"), move |_, _| {
+                    let patch = std::fs::read(&path).map_err(|err| {
+                        OperationError::Write(WriteError::Backend(format!(
+                            "cannot read {}: {err}",
+                            path.display()
+                        )))
+                    })?;
+                    apply.apply(&repo, &patch)
+                })
+                .await;
+            self.finish("Apply patch", result, |()| format!("Applied {name}"));
+        });
+    }
+
+    /// Drops a stash, after the confirm dialog.
+    pub fn drop_stash(mut self, stash: Stash) {
+        self.dialog.set(None);
+        let drop_case = self.services.peek().drop_stash.clone();
+        let repo = self.session.repo.peek().clone();
+        let label = running_label(&Action::DropStash {
+            stash: stash.clone(),
+        });
+        self.spawn(async move {
+            let summary = format!("Dropped {}", stash.name());
+            let result = self
+                .run(label, move |_, _| drop_case.drop_stash(&repo, &stash))
+                .await;
+            self.finish("Drop stash", result, |()| summary);
         });
     }
 
@@ -700,5 +843,8 @@ pub fn dialog_title(dialog: &Dialog) -> String {
         }
         Dialog::CreateTag { from, .. } => format!("New tag at {from}"),
         Dialog::ConfirmDeleteRemoteTag { remote, tag } => format!("Delete {tag} from {remote}?"),
+        Dialog::SaveStash => "Stash local changes".to_owned(),
+        Dialog::ConfirmDropStash { stash } => format!("Drop {}?", stash.name()),
+        Dialog::StashConflicts { stash, .. } => format!("{} applied with conflicts", stash.name()),
     }
 }

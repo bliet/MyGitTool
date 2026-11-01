@@ -1,8 +1,10 @@
 use application::{RemoteBranches, RepositoryRefs};
-use domain::{Branch, BranchKind, CommitId, Head, Remote, Tag, Upstream};
+use domain::{Branch, BranchKind, CommitId, Head, Remote, Stash, Tag, Upstream};
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use ui::view::branch_tree::{BranchRowKind, TAGS_KEY, branch_rows, natural_cmp, remote_key};
+use ui::view::branch_tree::{
+    BranchRowKind, TAGS_KEY, branch_rows, natural_cmp, remote_key, stash_summary,
+};
 
 fn local(name: &str, is_head: bool, upstream: Option<Upstream>) -> Branch {
     Branch {
@@ -59,6 +61,7 @@ fn refs() -> RepositoryRefs {
             branches: vec![remote("origin", "fix/x"), remote("origin", "main")],
         }],
         tags: vec![],
+        stashes: vec![],
     }
 }
 
@@ -83,6 +86,7 @@ fn render(collapsed: &HashSet<String>) -> Vec<String> {
                     )
                 }
                 BranchRowKind::Tag(tag) => format!("{indent}#{}", tag.name),
+                BranchRowKind::Stash(stash) => format!("{indent}~{}", stash.name()),
             }
         })
         .collect()
@@ -176,7 +180,7 @@ fn local_branches_and_unknown_hosts_have_no_link() {
         .filter(|row| match &row.kind {
             BranchRowKind::Folder { web, .. } => web.is_some(),
             BranchRowKind::Branch(item) => item.web.is_some(),
-            BranchRowKind::Section(_) | BranchRowKind::Tag(_) => false,
+            BranchRowKind::Section(_) | BranchRowKind::Tag(_) | BranchRowKind::Stash(_) => false,
         })
         .count();
     assert_eq!(linked, 0);
@@ -247,4 +251,52 @@ fn natural_order_compares_numbers_by_value() {
     assert_eq!(natural_cmp("v01", "v1"), Ordering::Equal);
     assert_eq!(natural_cmp("a", "b"), Ordering::Less);
     assert_eq!(natural_cmp("v1", "v1.0"), Ordering::Less);
+}
+
+#[test]
+fn stashes_come_last_newest_first() {
+    let mut refs = with_tags(&["v1"]);
+    refs.stashes = (0..2)
+        .map(|index| Stash {
+            index,
+            message: format!("On main: stash {index}"),
+            id: CommitId::from_bytes([10 + index as u8; 20]),
+        })
+        .collect();
+    let rows = branch_rows(&refs, &HashSet::new());
+    let tail: Vec<_> = rows[rows.len() - 3..]
+        .iter()
+        .map(|row| match &row.kind {
+            BranchRowKind::Section(title) => (*title).to_owned(),
+            BranchRowKind::Stash(stash) => stash.name(),
+            other => panic!("unexpected row {other:?}"),
+        })
+        .collect();
+    assert_eq!(tail, ["Stashes", "stash@{0}", "stash@{1}"]);
+}
+
+#[test]
+fn no_stashes_means_no_stash_section() {
+    let rows = branch_rows(&refs(), &HashSet::new());
+    assert!(
+        !rows
+            .iter()
+            .any(|row| row.kind == BranchRowKind::Section("Stashes"))
+    );
+}
+
+#[test]
+fn stash_rows_show_the_description_and_the_branch() {
+    assert_eq!(
+        stash_summary("On feature/x: half done"),
+        ("half done".to_owned(), Some("feature/x".to_owned()))
+    );
+    assert_eq!(
+        stash_summary("WIP on main: 1a2b3c4 Fix: the parser"),
+        (
+            "1a2b3c4 Fix: the parser".to_owned(),
+            Some("main".to_owned())
+        )
+    );
+    assert_eq!(stash_summary("custom"), ("custom".to_owned(), None));
 }

@@ -2,11 +2,12 @@ use crate::components::App;
 use crate::state::AppState;
 use crate::view::settings::theme_script;
 use application::{
-    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateCommit,
-    CreateTag, DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
-    LoadOngoing, LoadWorkTreeChanges, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent,
-    OpenRepository, Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories, RememberLayout,
-    Settings, StageChanges, Startup, Theme, UserSettings, WatchRepository, WindowLayout,
+    AbortOperation, ApplyPatch, ApplyStash, Checkout, ComputeFileDiff, ContinueOperation,
+    CreateBranch, CreateCommit, CreatePatch, CreateTag, DeleteBranch, DeleteTag, DropStash, Fetch,
+    GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
+    MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository, Pull, Push, PushTag,
+    RebaseCurrentOnto, RecentRepositories, RememberLayout, SaveStash, Settings, StageChanges,
+    Startup, Theme, UserSettings, WatchRepository, WindowLayout,
 };
 use dioxus::desktop::icon_from_memory;
 use dioxus::desktop::tao::window::{Icon, Theme as NativeTheme};
@@ -82,6 +83,11 @@ pub struct Services {
     pub load_ongoing: LoadOngoing,
     pub stage_changes: StageChanges,
     pub create_commit: CreateCommit,
+    pub save_stash: SaveStash,
+    pub apply_stash: ApplyStash,
+    pub drop_stash: DropStash,
+    pub create_patch: CreatePatch,
+    pub apply_patch: ApplyPatch,
 }
 
 /// What the app starts with: the settings and the window layout, loaded

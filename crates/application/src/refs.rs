@@ -1,5 +1,5 @@
 use crate::ports::{ReadError, RepositoryReader};
-use domain::{Branch, BranchKind, CommitId, Head, Remote, RepositoryInfo, Tag};
+use domain::{Branch, BranchKind, CommitId, Head, Remote, RepositoryInfo, Stash, Tag};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -20,6 +20,8 @@ pub struct RepositoryRefs {
     pub remotes: Vec<RemoteBranches>,
     /// Sorted by name.
     pub tags: Vec<Tag>,
+    /// Newest first.
+    pub stashes: Vec<Stash>,
 }
 
 impl RepositoryRefs {
@@ -85,12 +87,15 @@ impl LoadBranches {
         }
         let mut tags = self.reader.tags(repo)?;
         tags.sort_by(|a, b| a.name.cmp(&b.name));
+        let mut stashes = self.reader.stashes(repo)?;
+        stashes.sort_by_key(|stash| stash.index);
 
         Ok(RepositoryRefs {
             head,
             local,
             remotes,
             tags,
+            stashes,
         })
     }
 }

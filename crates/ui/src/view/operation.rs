@@ -3,7 +3,7 @@
 use crate::view::branch_tree::{BranchItem, TagItem};
 use crate::view::diff::format_size;
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress, WebLink};
+use domain::{CommitId, OngoingOperation, Progress, Stash, WebLink};
 
 /// An operation the user can start from a menu or the toolbar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +59,17 @@ pub enum Action {
     Rebase {
         refname: String,
         name: String,
+    },
+    /// Asks for a message, then stashes the local changes.
+    SaveStash,
+    /// Applies the stash; `pop` also drops it.
+    ApplyStash {
+        stash: Stash,
+        pop: bool,
+    },
+    /// Asks for confirmation, then drops the stash.
+    DropStash {
+        stash: Stash,
     },
 }
 
@@ -256,6 +267,41 @@ pub fn tag_menu(tag: &TagItem, remotes: &[String]) -> Vec<MenuEntry> {
     entries
 }
 
+/// The context menu of a stash.
+pub fn stash_menu(stash: &Stash) -> Vec<MenuEntry> {
+    vec![
+        entry(
+            "Apply",
+            Action::ApplyStash {
+                stash: stash.clone(),
+                pop: false,
+            },
+        ),
+        entry(
+            "Pop (apply and drop)",
+            Action::ApplyStash {
+                stash: stash.clone(),
+                pop: true,
+            },
+        ),
+        separated(entry(
+            "Drop…",
+            Action::DropStash {
+                stash: stash.clone(),
+            },
+        )),
+    ]
+}
+
+/// What the status strip says after a stash was applied or popped.
+pub fn stash_applied(stash: &Stash, pop: bool) -> String {
+    if pop {
+        format!("Popped {}", stash.name())
+    } else {
+        format!("Applied {}", stash.name())
+    }
+}
+
 /// What the status strip says while `action` runs.
 pub fn running_label(action: &Action) -> String {
     match action {
@@ -280,6 +326,10 @@ pub fn running_label(action: &Action) -> String {
         Action::DeleteRemoteTag { remote, tag } => format!("Deleting {tag} from {remote}…"),
         Action::Merge { name, .. } => format!("Merging {name}…"),
         Action::Rebase { name, .. } => format!("Rebasing onto {name}…"),
+        Action::SaveStash => "Stashing…".to_owned(),
+        Action::ApplyStash { stash, pop: false } => format!("Applying {}…", stash.name()),
+        Action::ApplyStash { stash, pop: true } => format!("Popping {}…", stash.name()),
+        Action::DropStash { stash } => format!("Dropping {}…", stash.name()),
     }
 }
 

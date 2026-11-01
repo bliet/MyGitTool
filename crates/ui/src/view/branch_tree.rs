@@ -1,7 +1,7 @@
 //! The branch tree of the left column, flattened into rows.
 
 use application::RepositoryRefs;
-use domain::{Branch, BranchKind, CommitId, WebLink, web_link};
+use domain::{Branch, BranchKind, CommitId, Stash, WebLink, web_link};
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +52,7 @@ pub enum BranchRowKind {
     },
     Branch(BranchItem),
     Tag(TagItem),
+    Stash(Stash),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +74,8 @@ pub fn remote_of_folder(key: &str) -> Option<&str> {
 }
 
 /// Local branches grouped by `/` prefix, then each remote with its branches
-/// grouped the same way, then the tags in one folder, newest version first.
+/// grouped the same way, then the tags in one folder, newest version first,
+/// then the stashes, newest first.
 /// Folders come before branches; both are sorted. Children of collapsed
 /// folders (by key) are left out.
 pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<BranchRow> {
@@ -153,7 +155,32 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
             }));
         }
     }
+    if !refs.stashes.is_empty() {
+        rows.push(BranchRow {
+            depth: 0,
+            kind: BranchRowKind::Section("Stashes"),
+        });
+        rows.extend(refs.stashes.iter().map(|stash| BranchRow {
+            depth: 0,
+            kind: BranchRowKind::Stash(stash.clone()),
+        }));
+    }
     rows
+}
+
+/// What a stash row shows: the stash's description and the branch it was
+/// made on, taken from Git's `On <branch>: <message>` or
+/// `WIP on <branch>: <hash> <subject>`.
+pub fn stash_summary(message: &str) -> (String, Option<String>) {
+    let parsed = message
+        .strip_prefix("WIP on ")
+        .or_else(|| message.strip_prefix("On "))
+        // A branch name cannot contain `:`, so the first one ends it.
+        .and_then(|rest| rest.split_once(": "));
+    match parsed {
+        Some((branch, text)) => (text.to_owned(), Some(branch.to_owned())),
+        None => (message.to_owned(), None),
+    }
 }
 
 /// Compares names with runs of digits as numbers, so `v1.10` comes after

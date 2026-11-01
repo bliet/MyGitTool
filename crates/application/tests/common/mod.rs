@@ -112,6 +112,14 @@ pub fn commit(n: u8, parents: &[u8]) -> domain::Commit {
     }
 }
 
+pub fn stash(index: usize, n: u8) -> domain::Stash {
+    domain::Stash {
+        index,
+        message: format!("On main: stash {n}"),
+        id: id(n),
+    }
+}
+
 pub fn local(name: &str, target: u8, is_head: bool) -> domain::Branch {
     domain::Branch {
         name: name.into(),
@@ -143,8 +151,10 @@ pub struct FakeReader {
     pub branches: Vec<domain::Branch>,
     pub remotes: Vec<domain::Remote>,
     pub tags: Vec<domain::Tag>,
+    pub stashes: Vec<domain::Stash>,
     pub commits: Vec<domain::Commit>,
     pub work_tree: domain::WorkTreeChanges,
+    pub patch: Vec<u8>,
     pub files: HashMap<(domain::Revision, String), Vec<u8>>,
     /// Upstream config by local branch name.
     pub tracking: HashMap<String, domain::Tracking>,
@@ -184,8 +194,10 @@ impl Default for FakeReader {
             branches: Vec::new(),
             remotes: Vec::new(),
             tags: Vec::new(),
+            stashes: Vec::new(),
             commits: Vec::new(),
             work_tree: domain::WorkTreeChanges::default(),
+            patch: Vec::new(),
             files: HashMap::new(),
             tracking: HashMap::new(),
             refs: HashMap::new(),
@@ -228,6 +240,10 @@ impl application::RepositoryReader for FakeReader {
         Ok(self.tags.clone())
     }
 
+    fn stashes(&self, _: &RepositoryInfo) -> Result<Vec<domain::Stash>, application::ReadError> {
+        Ok(self.stashes.clone())
+    }
+
     fn history(
         &self,
         _: &RepositoryInfo,
@@ -252,6 +268,10 @@ impl application::RepositoryReader for FakeReader {
         _: &RepositoryInfo,
     ) -> Result<domain::WorkTreeChanges, application::ReadError> {
         Ok(self.work_tree.clone())
+    }
+
+    fn work_tree_patch(&self, _: &RepositoryInfo) -> Result<Vec<u8>, application::ReadError> {
+        Ok(self.patch.clone())
     }
 
     fn file_content(
@@ -467,6 +487,37 @@ impl application::RepositoryWriter for FakeWriter {
     ) -> Result<domain::CommitId, application::WriteError> {
         self.record(format!("commit {message:?}"));
         Ok(id(9))
+    }
+
+    fn stash_save(
+        &self,
+        _: &RepositoryInfo,
+        message: Option<&str>,
+        include_untracked: bool,
+    ) -> Result<(), application::WriteError> {
+        self.record(format!(
+            "stash_save {message:?} untracked={include_untracked}"
+        ));
+        Ok(())
+    }
+
+    fn stash_apply(
+        &self,
+        _: &RepositoryInfo,
+        index: usize,
+    ) -> Result<application::Integration, application::WriteError> {
+        self.record(format!("stash_apply {index}"));
+        Ok(self.integration.clone())
+    }
+
+    fn stash_drop(&self, _: &RepositoryInfo, index: usize) -> Result<(), application::WriteError> {
+        self.record(format!("stash_drop {index}"));
+        Ok(())
+    }
+
+    fn apply_patch(&self, _: &RepositoryInfo, patch: &[u8]) -> Result<(), application::WriteError> {
+        self.record(format!("apply_patch {}", String::from_utf8_lossy(patch)));
+        Ok(())
     }
 }
 

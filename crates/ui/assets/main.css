@@ -255,6 +255,7 @@ h2 {
 .tree-row .label { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .tree-row .twisty { width: 12px; color: var(--fg-muted); font-size: 10px; }
 .tree-row .marker { width: 10px; margin-left: -12px; color: var(--badge-head); font-size: 9px; }
+.tree-row .stash-marker { color: var(--fg-muted); font-size: 11px; }
 .tree-row.head .label { font-weight: 700; }
 .tree-row .tracking { color: var(--fg-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
@@ -454,7 +455,10 @@ button.copy { padding: 0 4px; font-size: 12px; }
 .status.sM { color: var(--accent); }
 .status.sR, .status.sT { color: var(--lane-3); }
 .file.empty { padding-left: 8px; }
-.files-header button.small { padding: 1px 8px; font-size: 12px; }
+button.small { padding: 1px 8px; font-size: 12px; }
+.details-body .subject-row button.small { margin-top: 1px; }
+.button-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+button.danger-text { color: var(--danger); }
 /* Shown on hover, so the lists stay calm while reading them. */
 .file button.stage {
   padding: 0 6px;

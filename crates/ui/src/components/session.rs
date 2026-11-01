@@ -25,6 +25,8 @@ pub enum DetailsState {
     Empty,
     Loading,
     Commit(Box<CommitDetails>),
+    /// The stash commit; its changes are the stashed work.
+    Stash(Box<CommitDetails>),
     Uncommitted,
     Error(String),
 }
@@ -149,6 +151,14 @@ impl Session {
                 }
                 if self.refs.peek().as_ref() == Some(&refs) {
                     return false;
+                }
+                // A stash that was dropped or popped is no longer shown.
+                let selection = *self.selection.peek();
+                if let Some(Selection::Stash(id)) = selection
+                    && !refs.stashes.iter().any(|stash| stash.id == id)
+                {
+                    self.selection.set(None);
+                    self.details.set(DetailsState::Empty);
                 }
                 self.ref_index.set(RefIndex::new(&refs));
                 self.refs.set(Some(refs));
@@ -291,12 +301,13 @@ impl Session {
     }
 
     async fn load_details(mut self, selection: Selection) {
-        let id = match selection {
+        let (id, is_stash) = match selection {
             Selection::Uncommitted => {
                 self.details.set(DetailsState::Uncommitted);
                 return;
             }
-            Selection::Commit(id) => id,
+            Selection::Commit(id) => (id, false),
+            Selection::Stash(id) => (id, true),
         };
         self.details.set(DetailsState::Loading);
         let get = self.services.peek().get_commit_details.clone();
@@ -307,6 +318,7 @@ impl Session {
             return;
         }
         self.details.set(match result {
+            Ok(Ok(details)) if is_stash => DetailsState::Stash(Box::new(details)),
             Ok(Ok(details)) => DetailsState::Commit(Box::new(details)),
             Ok(Err(err)) => DetailsState::Error(err.to_string()),
             Err(message) => DetailsState::Error(message),
@@ -330,6 +342,13 @@ impl Session {
                 }
             }
         });
+    }
+
+    /// Shows the stash with the commit `id` in the details column. Stashes
+    /// are not in the history, so nothing scrolls.
+    pub fn select_stash(mut self, id: CommitId) {
+        self.selected_branch.set(None);
+        self.select(Selection::Stash(id));
     }
 
     pub fn select_branch(mut self, branch: &BranchItem) {

@@ -8,6 +8,7 @@ mod diff;
 mod hosting;
 mod remote;
 mod repository;
+mod stash;
 mod state;
 
 pub use branch::{Branch, BranchKind, Head, Remote, Tag, Upstream};
@@ -21,4 +22,5 @@ pub use diff::{
 pub use hosting::{Hoster, WebLink, web_link};
 pub use remote::{Credential, CredentialRequest, FastForward, Progress, PullConfig, Tracking};
 pub use repository::RepositoryInfo;
+pub use stash::Stash;
 pub use state::{DirtyWorkTree, OngoingOperation};

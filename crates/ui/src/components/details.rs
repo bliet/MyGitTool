@@ -4,9 +4,11 @@ use super::session::{DetailsState, Session};
 use super::{now_seconds, update_settings};
 use crate::launch::Services;
 use crate::state::AppState;
+use crate::view::branch_tree::stash_summary;
 use crate::view::commit::{Staging, changes_under, commit_blocker, commit_label};
 use crate::view::file_tree::{FileViewMode, file_rows};
 use crate::view::format::details_date;
+use crate::view::operation::{Action, stash_menu};
 use application::{DateFormat, RefLabelKind, Settings};
 use dioxus::prelude::*;
 use domain::{CommitDetails, DiffSource, FileChange, Signature};
@@ -59,6 +61,9 @@ pub fn DetailsColumn() -> Element {
                 DetailsState::Commit(details) => rsx! {
                     CommitView { details: *details }
                 },
+                DetailsState::Stash(details) => rsx! {
+                    StashView { details: *details }
+                },
             }
         }
     }
@@ -80,7 +85,23 @@ fn UncommittedView() -> Element {
 
     rsx! {
         div { class: "details-body",
-            h3 { class: "subject", "Uncommitted changes" }
+            div { class: "subject-row",
+                h3 { class: "subject", "Uncommitted changes" }
+                button {
+                    class: "small",
+                    title: "Stash the local changes and clean the work tree",
+                    disabled: busy,
+                    onclick: move |_| operations.start(Action::SaveStash),
+                    "Stash…"
+                }
+                button {
+                    class: "small",
+                    title: "Save the uncommitted changes, untracked files included, as a patch file",
+                    disabled: busy,
+                    onclick: move |_| operations.create_patch(),
+                    "Patch…"
+                }
+            }
             div { class: "commit-box",
                 textarea {
                     rows: "4",
@@ -122,6 +143,83 @@ fn UncommittedView() -> Element {
             }
         }
     }
+}
+
+/// A stash: what it holds, and buttons to apply, pop or drop it.
+#[component]
+fn StashView(details: CommitDetails) -> Element {
+    let session = use_context::<Session>();
+    let operations = use_context::<Operations>();
+    let date_format = use_context::<Signal<Settings>>().read().date_format;
+    let busy = operations.is_running();
+    let commit = &details.commit;
+    let id = commit.id;
+    let stash = session
+        .refs
+        .read()
+        .as_ref()
+        .and_then(|refs| refs.stashes.iter().find(|s| s.id == id).cloned());
+    let (text, branch) = stash_summary(&details.message);
+    let text = text.trim().to_owned();
+    let base = commit.parents.first().copied();
+    let created = details_date(details.committer.time, date_format, now_seconds());
+
+    rsx! {
+        div { class: "details-body",
+            h3 { class: "subject selectable", "{text}" }
+            if let Some(stash) = stash {
+                div { class: "button-row",
+                    for entry in stash_menu(&stash) {
+                        button {
+                            class: if matches!(entry.action, Action::DropStash { .. }) { "danger-text" } else { "" },
+                            disabled: busy,
+                            onclick: move |_| operations.start(entry.action.clone()),
+                            "{entry.label}"
+                        }
+                    }
+                }
+            }
+            dl { class: "fields",
+                dt { "Stash" }
+                dd {
+                    code { class: "selectable",
+                        {stash_name(&session, id)}
+                    }
+                }
+                if let Some(branch) = branch {
+                    dt { "Branch" }
+                    dd { span { class: "selectable", "{branch}" } }
+                }
+                dt { "Created" }
+                dd { span { class: "selectable", "{created}" } }
+                if let Some(base) = base {
+                    dt { "Based on" }
+                    dd {
+                        button {
+                            class: "link",
+                            title: "Go to {base}",
+                            onclick: move |_| session.select_and_reveal(base),
+                            {base.short()}
+                        }
+                    }
+                }
+            }
+            ChangedFiles {
+                changes: details.changes.clone(),
+                source: DiffSource::Commit { id, parent: base },
+            }
+        }
+    }
+}
+
+/// The current name of the stash with the commit `id`, e.g. `stash@{0}`.
+fn stash_name(session: &Session, id: domain::CommitId) -> String {
+    session
+        .refs
+        .read()
+        .as_ref()
+        .and_then(|refs| refs.stashes.iter().find(|s| s.id == id))
+        .map_or_else(|| id.short(), |stash| stash.name())
 }
 
 #[component]

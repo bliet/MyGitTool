@@ -61,6 +61,14 @@ pub enum OperationError {
     EmptyCommitMessage,
     #[error("there are no staged changes to commit")]
     NothingStaged,
+    #[error("there are no local changes to stash")]
+    NothingToStash,
+    #[error("there are no local changes to put in a patch")]
+    NothingToPatch,
+    #[error("the patch file is empty")]
+    EmptyPatch,
+    #[error("the stash {0} no longer exists")]
+    StashNotFound(String),
 }
 
 /// What to fetch.

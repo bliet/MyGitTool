@@ -2,12 +2,12 @@ use crate::{history, map};
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
     Branch, BranchKind, CommitDetails, CommitId, FastForward, FileChange, FileContent, Head,
-    OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking, Upstream,
+    OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag, Tracking, Upstream,
     WorkTreeChanges,
 };
 use git2::{
-    BranchType, Delta, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
-    ReferenceType, Repository, RepositoryState, Status, StatusOptions, Tree,
+    BranchType, Delta, Diff, DiffFindOptions, DiffFormat, DiffOptions, ErrorCode, ObjectType, Oid,
+    Patch, ReferenceType, Repository, RepositoryState, Status, StatusOptions, Tree,
 };
 use std::fs;
 use std::io;
@@ -122,6 +122,21 @@ impl RepositoryReader for GitRepositoryReader {
         Ok(tags)
     }
 
+    fn stashes(&self, repo: &RepositoryInfo) -> Result<Vec<Stash>, ReadError> {
+        let mut git = open(repo)?;
+        let mut stashes = Vec::new();
+        git.stash_foreach(|index, message, id| {
+            stashes.push(Stash {
+                index,
+                message: message.to_owned(),
+                id: map::commit_id(*id),
+            });
+            true
+        })
+        .map_err(map::error)?;
+        Ok(stashes)
+    }
+
     fn history(
         &self,
         repo: &RepositoryInfo,
@@ -190,6 +205,38 @@ impl RepositoryReader for GitRepositoryReader {
             staged: changes(&mut staged, Conflicts::Skip)?,
             unstaged: changes(&mut unstaged, Conflicts::Keep)?,
         })
+    }
+
+    fn work_tree_patch(&self, repo: &RepositoryInfo) -> Result<Vec<u8>, ReadError> {
+        let git = open(repo)?;
+        if git.is_bare() {
+            return Ok(Vec::new());
+        }
+        let head_tree = match git.head() {
+            Ok(head) => Some(head.peel_to_tree().map_err(map::error)?),
+            Err(err) if err.code() == ErrorCode::UnbornBranch => None,
+            Err(err) => return Err(map::error(err)),
+        };
+        let mut options = DiffOptions::new();
+        options
+            .include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .show_untracked_content(true)
+            .show_binary(true);
+        let diff = git
+            .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut options))
+            .map_err(map::error)?;
+        let mut patch = Vec::new();
+        diff.print(DiffFormat::Patch, |_, _, line| {
+            // Content lines carry their `+`, `-` or ` ` only as the origin.
+            if matches!(line.origin(), '+' | '-' | ' ') {
+                patch.push(line.origin() as u8);
+            }
+            patch.extend_from_slice(line.content());
+            true
+        })
+        .map_err(map::error)?;
+        Ok(patch)
     }
 
     fn file_content(

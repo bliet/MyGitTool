@@ -1,10 +1,13 @@
 use super::operations::Operations;
 use super::session::Session;
-use crate::view::branch_tree::{BranchItem, BranchRowKind, TagItem, branch_rows, remote_of_folder};
-use crate::view::operation::{Action, branch_menu, remote_menu, tag_menu};
+use crate::view::branch_tree::{
+    BranchItem, BranchRowKind, TagItem, branch_rows, remote_of_folder, stash_summary,
+};
+use crate::view::history::Selection;
+use crate::view::operation::{Action, branch_menu, remote_menu, stash_menu, tag_menu};
 use application::Settings;
 use dioxus::prelude::*;
-use domain::WebLink;
+use domain::{Stash, WebLink};
 
 /// Indentation per tree level in pixels.
 const INDENT: usize = 14;
@@ -19,6 +22,7 @@ pub fn BranchesColumn() -> Element {
         None => Vec::new(),
     };
     let selected = session.selected_branch.read().clone();
+    let selection = *session.selection.read();
     let remotes: Vec<String> = session
         .refs
         .read()
@@ -72,6 +76,13 @@ pub fn BranchesColumn() -> Element {
                                 selected: selected.as_deref() == Some(tag.refname().as_str()),
                                 remotes: remotes.clone(),
                                 tag,
+                            }
+                        },
+                        BranchRowKind::Stash(stash) => rsx! {
+                            StashRow {
+                                key: "{stash.id}",
+                                selected: selection == Some(Selection::Stash(stash.id)),
+                                stash,
                             }
                         },
                         BranchRowKind::Branch(item) => rsx! {
@@ -180,6 +191,41 @@ fn TagRow(tag: TagItem, selected: bool, remotes: Vec<String>) -> Element {
             },
             span { class: "marker tag-marker", "◆" }
             span { class: "label", "{tag.name}" }
+        }
+    }
+}
+
+#[component]
+fn StashRow(stash: Stash, selected: bool) -> Element {
+    let session = use_context::<Session>();
+    let class = if selected {
+        "tree-row stash selected"
+    } else {
+        "tree-row stash"
+    };
+    let (text, branch) = stash_summary(&stash.message);
+    let title = format!(
+        "{}: {}\nClick to show its changes\nRight-click to apply, pop or drop",
+        stash.name(),
+        stash.message
+    );
+    let id = stash.id;
+    let menu = stash_menu(&stash);
+    rsx! {
+        li {
+            class,
+            title: "{title}",
+            style: "padding-left: {folder_indent(0) + 12}px; --depth: 0;",
+            onclick: move |_| session.select_stash(id),
+            oncontextmenu: move |event| {
+                session.select_stash(id);
+                consume_context::<Operations>().open_menu(&event, menu.clone());
+            },
+            span { class: "marker stash-marker", "≡" }
+            span { class: "label", "{text}" }
+            if let Some(branch) = branch {
+                span { class: "tracking", "{branch}" }
+            }
         }
     }
 }

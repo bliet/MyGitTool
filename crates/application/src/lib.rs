@@ -17,6 +17,7 @@ mod refs;
 mod search;
 mod settings;
 mod staging;
+mod stash;
 mod sync;
 mod tags;
 mod watch;
@@ -45,10 +46,11 @@ pub use refs::{LoadBranches, RefIndex, RefLabel, RefLabelKind, RemoteBranches, R
 pub use search::CommitQuery;
 pub use settings::UserSettings;
 pub use staging::{CreateCommit, StageChanges};
+pub use stash::{ApplyStash, DropStash, SaveStash, StashOutcome};
 pub use sync::{
     AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,
     PushDestination, PushPlan,
 };
 pub use tags::{CreateTag, DeleteTag, PushTag};
 pub use watch::WatchRepository;
-pub use work_tree::LoadWorkTreeChanges;
+pub use work_tree::{ApplyPatch, CreatePatch, LoadWorkTreeChanges};

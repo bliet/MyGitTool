@@ -182,6 +182,12 @@ pub fn RepositoryView(
                 }
             }
             button {
+                title: "Apply a patch file to the work tree",
+                disabled: busy,
+                onclick: move |_| operations.apply_patch(),
+                "⎘ Apply patch…"
+            }
+            button {
                 class: if guides { "active" } else { "" },
                 title: if guides { "Hide indent guides in trees" } else { "Show indent guides in trees" },
                 aria_pressed: "{guides}",

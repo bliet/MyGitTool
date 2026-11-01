@@ -1,10 +1,10 @@
 use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress, web_link};
+use domain::{CommitId, OngoingOperation, Progress, Stash, web_link};
 use ui::view::branch_tree::{BranchItem, TagItem, remote_key, remote_of_folder};
 use ui::view::operation::{
     Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
     integration_summary, ongoing_text, progress_fraction, progress_text, remote_menu,
-    running_label, tag_menu,
+    running_label, stash_applied, stash_menu, tag_menu,
 };
 
 fn tip() -> CommitId {
@@ -356,4 +356,55 @@ fn remotes_on_a_known_hoster_can_be_opened_in_the_browser() {
     );
     // Deleting stays the last entry.
     assert!(matches!(last.action, Action::DeleteRemote { .. }));
+}
+
+fn stash(index: usize) -> Stash {
+    Stash {
+        index,
+        message: "On main: half done".into(),
+        id: CommitId::from_bytes([7; 20]),
+    }
+}
+
+#[test]
+fn stashes_apply_pop_and_drop() {
+    let menu = stash_menu(&stash(1));
+    assert_eq!(labels(&menu), ["Apply", "Pop (apply and drop)", "Drop…"]);
+    assert!(menu[2].separated);
+    assert_eq!(
+        actions(menu),
+        [
+            Action::ApplyStash {
+                stash: stash(1),
+                pop: false
+            },
+            Action::ApplyStash {
+                stash: stash(1),
+                pop: true
+            },
+            Action::DropStash { stash: stash(1) },
+        ]
+    );
+}
+
+#[test]
+fn stash_texts_name_the_stash() {
+    assert_eq!(running_label(&Action::SaveStash), "Stashing…");
+    assert_eq!(
+        running_label(&Action::ApplyStash {
+            stash: stash(1),
+            pop: true
+        }),
+        "Popping stash@{1}…"
+    );
+    assert_eq!(
+        running_label(&Action::DropStash { stash: stash(0) }),
+        "Dropping stash@{0}…"
+    );
+    assert_eq!(stash_applied(&stash(0), false), "Applied stash@{0}");
+    assert_eq!(stash_applied(&stash(0), true), "Popped stash@{0}");
+    assert_eq!(
+        dirty_texts("Apply stash").0,
+        "Apply stash needs a clean work tree"
+    );
 }

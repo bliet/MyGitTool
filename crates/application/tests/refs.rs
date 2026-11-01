@@ -117,3 +117,16 @@ fn detached_head_gets_its_own_label() {
     let index = RefIndex::new(&refs);
     assert_eq!(index.labels(&id(7))[0].kind, RefLabelKind::DetachedHead);
 }
+
+#[test]
+fn stashes_come_newest_first() {
+    let reader = FakeReader {
+        stashes: vec![common::stash(1, 11), common::stash(0, 10)],
+        ..reader()
+    };
+    let refs = LoadBranches::new(Arc::new(reader))
+        .load(&RepositoryInfo::new("/r"))
+        .unwrap();
+    let names: Vec<_> = refs.stashes.iter().map(|s| s.name()).collect();
+    assert_eq!(names, ["stash@{0}", "stash@{1}"]);
+}

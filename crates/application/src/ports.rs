@@ -1,6 +1,6 @@
 use domain::{
     Branch, Commit, CommitDetails, CommitId, Credential, CredentialRequest, FileContent, Head,
-    OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking,
+    OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag, Tracking,
     WorkTreeChanges,
 };
 use std::error::Error;
@@ -152,6 +152,8 @@ pub trait RepositoryReader: Send + Sync {
     fn branches(&self, repo: &RepositoryInfo) -> Result<Vec<Branch>, ReadError>;
     fn remotes(&self, repo: &RepositoryInfo) -> Result<Vec<Remote>, ReadError>;
     fn tags(&self, repo: &RepositoryInfo) -> Result<Vec<Tag>, ReadError>;
+    /// The stash entries, newest first.
+    fn stashes(&self, repo: &RepositoryInfo) -> Result<Vec<Stash>, ReadError>;
     /// Starts a walk over the commits in `scope`, in topological order
     /// (children before parents) with newer commits first where possible.
     fn history(
@@ -168,6 +170,9 @@ pub trait RepositoryReader: Send + Sync {
     /// (the index against the work tree, with untracked and conflicted
     /// files). Empty if the work tree is clean or the repository is bare.
     fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<WorkTreeChanges, ReadError>;
+    /// The uncommitted changes (HEAD against the work tree, with untracked
+    /// files) as a patch that `git apply` accepts. Empty if there are none.
+    fn work_tree_patch(&self, repo: &RepositoryInfo) -> Result<Vec<u8>, ReadError>;
     /// The content of the file at `path` in `revision`, or `None` if there is
     /// no file at that path. A file larger than `limit` bytes is not loaded.
     fn file_content(
@@ -274,6 +279,23 @@ pub trait RepositoryWriter: Send + Sync {
     /// Commits the index on top of HEAD (or as the first commit of an
     /// unborn branch) with the configured user as author and committer.
     fn commit(&self, repo: &RepositoryInfo, message: &str) -> Result<CommitId, WriteError>;
+    /// Stashes the changes to tracked files (and untracked ones if
+    /// `include_untracked`) and resets the work tree to HEAD. Without a
+    /// message, Git's `WIP on <branch>: …` is used.
+    fn stash_save(
+        &self,
+        repo: &RepositoryInfo,
+        message: Option<&str>,
+        include_untracked: bool,
+    ) -> Result<(), WriteError>;
+    /// Applies the stash at `index` to the work tree; the stash stays.
+    /// Conflicts are written into the files and left in the index.
+    fn stash_apply(&self, repo: &RepositoryInfo, index: usize) -> Result<Integration, WriteError>;
+    /// Deletes the stash at `index`.
+    fn stash_drop(&self, repo: &RepositoryInfo, index: usize) -> Result<(), WriteError>;
+    /// Applies a patch in Git's diff format to the work tree, like `git
+    /// apply`. Nothing changes unless every hunk applies.
+    fn apply_patch(&self, repo: &RepositoryInfo, patch: &[u8]) -> Result<(), WriteError>;
     /// Sets `branch.<branch>.remote` and `branch.<branch>.merge`.
     fn set_tracking(
         &self,

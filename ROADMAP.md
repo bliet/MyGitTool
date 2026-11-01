@@ -73,6 +73,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [ ] Multiple repositories in tabs
 - [ ] Optional credential storage in the OS keychain
 - [x] Tags: create, delete and push
-- [ ] Stash list in the left column
+- [x] Stash list in the left column (save, apply, pop and drop)
+- [x] Patches: save the uncommitted changes as a patch file, and apply a patch file to the work tree
 - [x] Search and filter the history by message, author or hash
 - [ ] Force push (`--force-with-lease`) with a confirmation
