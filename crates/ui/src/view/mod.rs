@@ -4,6 +4,7 @@
 pub mod branch_tree;
 pub mod columns;
 pub mod commit;
+pub mod conflict;
 pub mod diff;
 pub mod file_tree;
 pub mod format;

@@ -394,6 +394,35 @@ impl RepositoryWriter for GitRepositoryWriter {
         git.stash_drop(index).map_err(error)
     }
 
+    fn resolve_conflict(
+        &self,
+        repo: &RepositoryInfo,
+        path: &str,
+        content: Option<&[u8]>,
+    ) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let workdir = git
+            .workdir()
+            .ok_or_else(|| WriteError::Backend("a bare repository has no work tree".to_owned()))?;
+        let file = workdir.join(path);
+        let io_error = |err: std::io::Error| WriteError::Backend(format!("{path}: {err}"));
+        match content {
+            Some(bytes) => {
+                if let Some(parent) = file.parent() {
+                    std::fs::create_dir_all(parent).map_err(io_error)?;
+                }
+                std::fs::write(&file, bytes).map_err(io_error)?;
+            }
+            None => match std::fs::remove_file(&file) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(io_error(err)),
+            },
+        }
+        // Staging the path drops its conflict entries.
+        self.stage(repo, &[path.to_owned()])
+    }
+
     fn apply_patch(&self, repo: &RepositoryInfo, patch: &[u8]) -> Result<(), WriteError> {
         let git = open(repo)?;
         let diff = Diff::from_buffer(patch)

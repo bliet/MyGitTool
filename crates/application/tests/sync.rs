@@ -1,8 +1,8 @@
 mod common;
 
 use application::{
-    AbortOperation, Fetch, FetchTarget, Integration, IntegrationOutcome, OperationError, Pull,
-    Push, PushDestination, PushPlan, RemoteError,
+    AbortOperation, Fetch, FetchTarget, ForcePushPlan, Integration, IntegrationOutcome,
+    OperationError, Pull, Push, PushDestination, PushPlan, RemoteError,
 };
 use common::{FakeReader, FakeRemote, FakeWriter, Silent, id};
 use domain::{
@@ -470,4 +470,69 @@ fn the_current_branch_is_pushed_from_the_toolbar() {
         setup.push.current_branch(&repo()),
         Err(OperationError::NoCurrentBranch)
     );
+}
+
+// Force push
+
+/// `on_main`, with the branch ref itself, and main and origin/main
+/// diverged by one commit on each side.
+fn diverged() -> FakeReader {
+    let mut reader = on_main();
+    reader.refs.insert("refs/heads/main".into(), id(1));
+    reader.ahead_behind = (1, 3);
+    reader
+}
+
+#[test]
+fn the_force_push_plan_names_the_lease_and_what_is_discarded() {
+    let setup = setup(diverged(), FakeWriter::default(), FakeRemote::default());
+    assert_eq!(
+        setup.push.force_plan(&repo(), "main"),
+        Ok(ForcePushPlan {
+            branch: "main".into(),
+            remote: "origin".into(),
+            remote_ref: "refs/heads/main".into(),
+            tracking: "origin/main".into(),
+            expected: Some(id(2)),
+            discarded: 3,
+        })
+    );
+}
+
+#[test]
+fn a_remote_branch_never_fetched_is_leased_as_absent() {
+    let mut reader = diverged();
+    reader.refs.remove("refs/remotes/origin/main");
+    let setup = setup(reader, FakeWriter::default(), FakeRemote::default());
+    let plan = setup.push.force_plan(&repo(), "main").unwrap();
+    assert_eq!((plan.expected, plan.discarded), (None, 0));
+}
+
+#[test]
+fn force_pushing_needs_an_upstream() {
+    let mut reader = diverged();
+    reader.tracking.clear();
+    let setup = setup(reader, FakeWriter::default(), FakeRemote::default());
+    assert_eq!(
+        setup.push.force_plan(&repo(), "main"),
+        Err(OperationError::NoUpstream("main".into()))
+    );
+}
+
+#[test]
+fn the_force_push_uses_the_confirmed_lease() {
+    let setup = setup(diverged(), FakeWriter::default(), FakeRemote::default());
+    let plan = setup.push.force_plan(&repo(), "main").unwrap();
+    setup
+        .push
+        .force_push(&repo(), &plan, &Silent, &Silent)
+        .unwrap();
+    assert_eq!(
+        setup.remote.calls(),
+        [format!(
+            "force_push main origin refs/heads/main lease={}",
+            id(2).short()
+        )]
+    );
+    assert!(setup.writer.calls().is_empty());
 }

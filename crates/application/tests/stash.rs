@@ -36,6 +36,7 @@ fn only_untracked() -> FakeReader {
         work_tree: WorkTreeChanges {
             staged: Vec::new(),
             unstaged: vec![untracked("new.txt")],
+            conflicts: Vec::new(),
         },
         ..FakeReader::default()
     }

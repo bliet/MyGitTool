@@ -168,6 +168,8 @@ pub struct FakeReader {
     /// What `changed_paths` answers for any pair, sorted.
     pub changed: Vec<String>,
     pub conflicts: Vec<String>,
+    /// What `conflict_sides` answers, by path.
+    pub conflict_sides: HashMap<String, domain::ConflictSides>,
     pub scopes: Mutex<Vec<application::HistoryScope>>,
     /// Every `file_content` call as (revision, path).
     pub reads: Mutex<Vec<(domain::Revision, String)>>,
@@ -207,6 +209,7 @@ impl Default for FakeReader {
             pull_config: domain::PullConfig::default(),
             changed: Vec::new(),
             conflicts: Vec::new(),
+            conflict_sides: HashMap::new(),
             scopes: Mutex::new(Vec::new()),
             reads: Mutex::new(Vec::new()),
         }
@@ -346,6 +349,30 @@ impl application::RepositoryReader for FakeReader {
 
     fn conflicted_files(&self, _: &RepositoryInfo) -> Result<Vec<String>, application::ReadError> {
         Ok(self.conflicts.clone())
+    }
+
+    fn conflict_sides(
+        &self,
+        _: &RepositoryInfo,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<domain::ConflictSides>, application::ReadError> {
+        let limited = |content: &Option<domain::FileContent>| match content {
+            Some(domain::FileContent::Bytes(bytes)) if bytes.len() as u64 > limit => {
+                Some(domain::FileContent::TooLarge {
+                    size: bytes.len() as u64,
+                })
+            }
+            other => other.clone(),
+        };
+        Ok(self
+            .conflict_sides
+            .get(path)
+            .map(|sides| domain::ConflictSides {
+                base: limited(&sides.base),
+                ours: limited(&sides.ours),
+                theirs: limited(&sides.theirs),
+            }))
     }
 }
 
@@ -515,6 +542,22 @@ impl application::RepositoryWriter for FakeWriter {
         Ok(())
     }
 
+    fn resolve_conflict(
+        &self,
+        _: &RepositoryInfo,
+        path: &str,
+        content: Option<&[u8]>,
+    ) -> Result<(), application::WriteError> {
+        match content {
+            Some(bytes) => self.record(format!(
+                "resolve {path} {:?}",
+                String::from_utf8_lossy(bytes)
+            )),
+            None => self.record(format!("resolve {path} deleted")),
+        }
+        Ok(())
+    }
+
     fn apply_patch(&self, _: &RepositoryInfo, patch: &[u8]) -> Result<(), application::WriteError> {
         self.record(format!("apply_patch {}", String::from_utf8_lossy(patch)));
         Ok(())
@@ -561,6 +604,22 @@ impl application::RemoteOperations for FakeRemote {
         _: &dyn application::CredentialProvider,
     ) -> Result<(), application::RemoteError> {
         self.answer(format!("push {branch} {remote} {remote_ref}"))
+    }
+
+    fn force_push(
+        &self,
+        _: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        expected: Option<domain::CommitId>,
+        _: &dyn application::ProgressReporter,
+        _: &dyn application::CredentialProvider,
+    ) -> Result<(), application::RemoteError> {
+        let lease = expected.map_or_else(|| "none".to_owned(), |id| id.short());
+        self.answer(format!(
+            "force_push {branch} {remote} {remote_ref} lease={lease}"
+        ))
     }
 
     fn push_tag(

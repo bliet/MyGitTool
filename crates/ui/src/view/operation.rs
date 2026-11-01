@@ -2,7 +2,7 @@
 
 use crate::view::branch_tree::{BranchItem, TagItem};
 use crate::view::diff::format_size;
-use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
+use application::{CheckoutTarget, FetchTarget, ForcePushPlan, IntegrationOutcome, OngoingState};
 use domain::{CommitId, OngoingOperation, Progress, Stash, WebLink};
 
 /// An operation the user can start from a menu or the toolbar.
@@ -14,6 +14,11 @@ pub enum Action {
     /// Pulls the current branch.
     Pull,
     Push {
+        branch: String,
+    },
+    /// Shows what a force push would replace, then force pushes with a
+    /// lease after confirmation.
+    ForcePush {
         branch: String,
     },
     Checkout(CheckoutTarget),
@@ -168,8 +173,18 @@ pub fn branch_menu(branch: &BranchItem) -> Vec<MenuEntry> {
             branch: branch.name.clone(),
         },
     );
+    let force = branch.has_upstream().then(|| {
+        entry(
+            format!("Force push {}…", branch.name),
+            Action::ForcePush {
+                branch: branch.name.clone(),
+            },
+        )
+    });
     if branch.is_head {
-        return vec![create, separated(fetch), entry("Pull", Action::Pull), push];
+        let mut entries = vec![create, separated(fetch), entry("Pull", Action::Pull), push];
+        entries.extend(force);
+        return entries;
     }
     let mut entries = vec![entry(
         format!("Check out {}", branch.name),
@@ -179,6 +194,7 @@ pub fn branch_menu(branch: &BranchItem) -> Vec<MenuEntry> {
     entries.push(separated(create));
     entries.push(separated(fetch));
     entries.push(push);
+    entries.extend(force);
     entries.push(separated(entry(
         format!("Delete {}", branch.name),
         Action::DeleteLocal {
@@ -313,6 +329,7 @@ pub fn running_label(action: &Action) -> String {
         }
         Action::Pull => "Pulling…".to_owned(),
         Action::Push { branch } => format!("Pushing {branch}…"),
+        Action::ForcePush { branch } => format!("Force pushing {branch}…"),
         Action::Checkout(CheckoutTarget::Local(branch))
         | Action::Checkout(CheckoutTarget::Remote { branch, .. }) => {
             format!("Checking out {branch}…")
@@ -331,6 +348,42 @@ pub fn running_label(action: &Action) -> String {
         Action::ApplyStash { stash, pop: true } => format!("Popping {}…", stash.name()),
         Action::DropStash { stash } => format!("Dropping {}…", stash.name()),
     }
+}
+
+/// The paragraphs of the force push confirmation: what is replaced, what
+/// is lost, and the lease that keeps unseen commits safe.
+pub fn force_push_texts(plan: &ForcePushPlan) -> Vec<String> {
+    let remote_branch = plan
+        .remote_ref
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&plan.remote_ref);
+    let mut texts = vec![format!(
+        "This replaces {remote_branch} on {} with your local {}, even though it is no fast-forward.",
+        plan.remote, plan.branch
+    )];
+    texts.push(match plan.discarded {
+        0 => format!("Nothing on {} is lost: {} contains all of it.", plan.tracking, plan.branch),
+        1 => format!(
+            "1 commit on {} that {} does not contain will be removed from {}, for everyone who uses it.",
+            plan.tracking, plan.branch, plan.remote
+        ),
+        n => format!(
+            "{n} commits on {} that {} does not contain will be removed from {}, for everyone who uses it.",
+            plan.tracking, plan.branch, plan.remote
+        ),
+    });
+    texts.push(match plan.expected {
+        Some(id) => format!(
+            "It only goes through while the branch on {} is still at {}, as last fetched. If someone pushed since, nothing is replaced.",
+            plan.remote,
+            id.short()
+        ),
+        None => format!(
+            "It only goes through while {} has no branch {remote_branch}, as last fetched.",
+            plan.remote
+        ),
+    });
+    texts
 }
 
 /// A one-line description of the progress.

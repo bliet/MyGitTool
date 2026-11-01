@@ -1,10 +1,10 @@
-use application::{CheckoutTarget, FetchTarget, IntegrationOutcome, OngoingState};
+use application::{CheckoutTarget, FetchTarget, ForcePushPlan, IntegrationOutcome, OngoingState};
 use domain::{CommitId, OngoingOperation, Progress, Stash, web_link};
 use ui::view::branch_tree::{BranchItem, TagItem, remote_key, remote_of_folder};
 use ui::view::operation::{
     Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
-    integration_summary, ongoing_text, progress_fraction, progress_text, remote_menu,
-    running_label, stash_applied, stash_menu, tag_menu,
+    force_push_texts, integration_summary, ongoing_text, progress_fraction, progress_text,
+    remote_menu, running_label, stash_applied, stash_menu, tag_menu,
 };
 
 fn tip() -> CommitId {
@@ -406,5 +406,78 @@ fn stash_texts_name_the_stash() {
     assert_eq!(
         dirty_texts("Apply stash").0,
         "Apply stash needs a clean work tree"
+    );
+}
+
+fn tracking(mut branch: BranchItem) -> BranchItem {
+    branch.ahead = Some(1);
+    branch.behind = Some(2);
+    branch
+}
+
+#[test]
+fn branches_with_an_upstream_can_be_force_pushed() {
+    for is_head in [true, false] {
+        let menu = branch_menu(&tracking(local("main", is_head)));
+        let force = menu.iter().position(|e| {
+            e.action
+                == Action::ForcePush {
+                    branch: "main".into(),
+                }
+        });
+        let push = menu.iter().position(|e| {
+            e.action
+                == Action::Push {
+                    branch: "main".into(),
+                }
+        });
+        assert_eq!(force, push.map(|p| p + 1), "right after Push");
+        assert_eq!(menu[force.unwrap()].label, "Force push main…");
+    }
+    assert!(
+        !branch_menu(&local("main", true))
+            .iter()
+            .any(|e| matches!(e.action, Action::ForcePush { .. })),
+        "without an upstream there is nothing to overwrite"
+    );
+    assert_eq!(
+        running_label(&Action::ForcePush {
+            branch: "main".into()
+        }),
+        "Force pushing main…"
+    );
+}
+
+#[test]
+fn the_force_push_confirmation_says_what_is_lost_and_what_is_safe() {
+    let plan = ForcePushPlan {
+        branch: "main".into(),
+        remote: "origin".into(),
+        remote_ref: "refs/heads/main".into(),
+        tracking: "origin/main".into(),
+        expected: Some(CommitId::from_bytes([0xab; 20])),
+        discarded: 2,
+    };
+    assert_eq!(
+        force_push_texts(&plan),
+        [
+            "This replaces main on origin with your local main, even though it is no fast-forward.",
+            "2 commits on origin/main that main does not contain will be removed from origin, for everyone who uses it.",
+            "It only goes through while the branch on origin is still at abababa, as last fetched. If someone pushed since, nothing is replaced.",
+        ]
+    );
+    let fresh = ForcePushPlan {
+        expected: None,
+        discarded: 0,
+        ..plan
+    };
+    let texts = force_push_texts(&fresh);
+    assert_eq!(
+        texts[1],
+        "Nothing on origin/main is lost: main contains all of it."
+    );
+    assert_eq!(
+        texts[2],
+        "It only goes through while origin has no branch main, as last fetched."
     );
 }

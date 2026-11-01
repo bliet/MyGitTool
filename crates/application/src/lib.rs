@@ -5,11 +5,13 @@
 
 mod branches;
 mod commit_details;
+mod conflict;
 mod diff;
 mod file_diff;
 mod graph;
 mod history;
 mod layout;
+mod merge;
 mod open_repository;
 mod ports;
 mod recent_repositories;
@@ -28,11 +30,13 @@ pub use branches::{
     MergeIntoCurrent, OngoingState, RebaseCurrentOnto, merge_message,
 };
 pub use commit_details::GetCommitDetails;
+pub use conflict::{LoadConflict, ResolveConflict};
 pub use diff::{is_binary, side_by_side};
 pub use file_diff::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
 pub use graph::{EdgeHalf, GraphEdge, GraphLayout, GraphRow};
 pub use history::{HistoryPager, HistoryRow, LoadHistory, SEARCH_BATCH};
 pub use layout::{MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, RememberLayout};
+pub use merge::merge3;
 pub use open_repository::{OpenRepository, Startup};
 pub use ports::{
     CredentialProvider, DateFormat, FileViewMode, HistoryCursor, HistoryScope, Integration,
@@ -48,8 +52,8 @@ pub use settings::UserSettings;
 pub use staging::{CreateCommit, StageChanges};
 pub use stash::{ApplyStash, DropStash, SaveStash, StashOutcome};
 pub use sync::{
-    AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,
-    PushDestination, PushPlan,
+    AbortOperation, Fetch, FetchTarget, ForcePushPlan, IntegrationOutcome, OperationError, Pull,
+    Push, PushDestination, PushPlan,
 };
 pub use tags::{CreateTag, DeleteTag, PushTag};
 pub use watch::WatchRepository;

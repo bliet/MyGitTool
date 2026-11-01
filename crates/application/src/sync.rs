@@ -67,6 +67,8 @@ pub enum OperationError {
     NothingToPatch,
     #[error("the patch file is empty")]
     EmptyPatch,
+    #[error("{0} has no unresolved conflict")]
+    NotConflicted(String),
     #[error("the stash {0} no longer exists")]
     StashNotFound(String),
 }
@@ -280,7 +282,24 @@ pub enum PushPlan {
     },
 }
 
-/// Pushes a local branch. There is no force push.
+/// What a force push of a branch would do, for the confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForcePushPlan {
+    pub branch: String,
+    pub remote: String,
+    /// The branch on the remote, e.g. `refs/heads/main`.
+    pub remote_ref: String,
+    /// The remote-tracking branch, e.g. `origin/main`.
+    pub tracking: String,
+    /// Where the last fetch saw the remote branch; the push only goes
+    /// through while it is still there. `None`: it did not exist.
+    pub expected: Option<CommitId>,
+    /// Commits on the remote branch that the local branch lacks; the force
+    /// push removes them from the remote.
+    pub discarded: usize,
+}
+
+/// Pushes a local branch: as a fast-forward, or forced with a lease.
 #[derive(Clone)]
 pub struct Push {
     reader: Arc<dyn RepositoryReader>,
@@ -344,6 +363,60 @@ impl Push {
             remote_ref: format!("refs/heads/{branch}"),
             set_upstream: true,
         }
+    }
+
+    /// What force pushing `branch` to its upstream would replace. It needs
+    /// an upstream: a branch without one has nothing to overwrite.
+    pub fn force_plan(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+    ) -> Result<ForcePushPlan, OperationError> {
+        let local = self
+            .reader
+            .resolve(repo, &format!("refs/heads/{branch}"))?
+            .ok_or_else(|| OperationError::BranchNotFound(branch.to_owned()))?;
+        let tracking = self
+            .reader
+            .tracking(repo, branch)?
+            .ok_or_else(|| OperationError::NoUpstream(branch.to_owned()))?;
+        let expected = self.reader.resolve(repo, &tracking.tracking_ref)?;
+        let discarded = match expected {
+            Some(remote) => self.reader.ahead_behind(repo, local, remote)?.1,
+            None => 0,
+        };
+        Ok(ForcePushPlan {
+            branch: branch.to_owned(),
+            remote: tracking.remote,
+            remote_ref: tracking.merge_ref,
+            tracking: tracking
+                .tracking_ref
+                .strip_prefix("refs/remotes/")
+                .unwrap_or(&tracking.tracking_ref)
+                .to_owned(),
+            expected,
+            discarded,
+        })
+    }
+
+    /// Force pushes as `plan` says, with its `expected` commit as the
+    /// lease: if someone pushed since the last fetch, nothing is replaced.
+    pub fn force_push(
+        &self,
+        repo: &RepositoryInfo,
+        plan: &ForcePushPlan,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), OperationError> {
+        Ok(self.remote.force_push(
+            repo,
+            &plan.branch,
+            &plan.remote,
+            &plan.remote_ref,
+            plan.expected,
+            progress,
+            credentials,
+        )?)
     }
 
     pub fn push(

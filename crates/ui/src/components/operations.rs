@@ -6,13 +6,14 @@ use super::session::Session;
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::commit::{Staging, committed_notice};
+use crate::view::history::Selection;
 use crate::view::operation::{
     Action, MenuEntry, conflict_title, dirty_texts, integration_summary, running_label,
     stash_applied,
 };
 use application::{
-    CredentialProvider, IntegrationOutcome, OperationError, ProgressReporter, PushDestination,
-    PushPlan, RemoteError, StashOutcome, WriteError,
+    CredentialProvider, ForcePushPlan, IntegrationOutcome, OperationError, ProgressReporter,
+    PushDestination, PushPlan, RemoteError, StashOutcome, WriteError,
 };
 use dioxus::dioxus_core::{Runtime, ScopeId, current_scope_id};
 use dioxus::prelude::*;
@@ -91,6 +92,15 @@ pub enum Dialog {
     ConfirmDeleteRemoteTag {
         remote: String,
         tag: String,
+    },
+    /// A push was refused, e.g. because the remote has other commits.
+    PushRejected {
+        branch: String,
+        message: String,
+    },
+    /// Shows what a force push would replace; it starts on confirmation.
+    ConfirmForcePush {
+        plan: ForcePushPlan,
     },
     /// Asks for the message of a new stash.
     SaveStash,
@@ -220,6 +230,14 @@ impl Operations {
                     Err(message) => self.app.write().error = Some(message),
                 }
             }),
+            Action::ForcePush { branch } => self.spawn(async move {
+                let push = services.push;
+                match blocking(move || push.force_plan(&repo, &branch)).await {
+                    Ok(Ok(plan)) => self.dialog.set(Some(Dialog::ConfirmForcePush { plan })),
+                    Ok(Err(err)) => self.fail("Force push", &err),
+                    Err(message) => self.app.write().error = Some(message),
+                }
+            }),
             Action::Checkout(target) => self.spawn(async move {
                 let checkout = services.checkout;
                 let result = self
@@ -321,14 +339,41 @@ impl Operations {
             branch: branch.clone(),
         });
         let remote = destination.remote.clone();
+        let pushed = branch.clone();
         let result = self
             .run(label, move |progress, credentials| {
-                push.push(&repo, &branch, &destination, progress, credentials)
-                    .map(|()| branch)
+                push.push(&repo, &pushed, &destination, progress, credentials)
             })
             .await;
-        self.finish("Push", result, |branch| {
-            format!("Pushed {branch} to {remote}")
+        // A rejection gets a dialog that offers the force push.
+        if let Some(Err(OperationError::Remote(RemoteError::Rejected { message, .. }))) = &result {
+            let mut dialog = self.dialog;
+            dialog.set(Some(Dialog::PushRejected {
+                branch,
+                message: message.clone(),
+            }));
+            self.session.refresh();
+            return;
+        }
+        self.finish("Push", result, |()| format!("Pushed {branch} to {remote}"));
+    }
+
+    /// Force pushes as the confirmed `plan` says.
+    pub fn force_push(mut self, plan: ForcePushPlan) {
+        self.dialog.set(None);
+        let push = self.services.peek().push.clone();
+        let repo = self.session.repo.peek().clone();
+        let label = running_label(&Action::ForcePush {
+            branch: plan.branch.clone(),
+        });
+        self.spawn(async move {
+            let summary = format!("Force pushed {} to {}", plan.branch, plan.remote);
+            let result = self
+                .run(label, move |progress, credentials| {
+                    push.force_push(&repo, &plan, progress, credentials)
+                })
+                .await;
+            self.finish("Force push", result, |()| summary);
         });
     }
 
@@ -639,10 +684,16 @@ impl Operations {
         });
     }
 
-    /// Leaves the conflicts for the user to resolve outside the app.
+    /// Leaves the operation in progress for the user to resolve the
+    /// conflicts, and shows the uncommitted changes, where each conflicted
+    /// file opens in the resolver.
     pub fn leave_conflicts(mut self) {
         self.dialog.set(None);
-        self.show_notice("Conflicts left for resolution outside the app".to_owned());
+        self.session.select(Selection::Uncommitted);
+        self.show_notice(
+            "Resolve each conflicted file, then continue (or resolve them with another tool)"
+                .to_owned(),
+        );
     }
 
     /// Asks the running operation to stop, answering an open prompt with
@@ -843,6 +894,8 @@ pub fn dialog_title(dialog: &Dialog) -> String {
         }
         Dialog::CreateTag { from, .. } => format!("New tag at {from}"),
         Dialog::ConfirmDeleteRemoteTag { remote, tag } => format!("Delete {tag} from {remote}?"),
+        Dialog::PushRejected { branch, .. } => format!("Push of {branch} rejected"),
+        Dialog::ConfirmForcePush { plan } => format!("Force push {}?", plan.branch),
         Dialog::SaveStash => "Stash local changes".to_owned(),
         Dialog::ConfirmDropStash { stash } => format!("Drop {}?", stash.name()),
         Dialog::StashConflicts { stash, .. } => format!("{} applied with conflicts", stash.name()),

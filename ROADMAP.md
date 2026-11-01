@@ -67,7 +67,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 ## Later
 
 - [ ] Auto-stash before checkout, pull, merge and rebase (and reapply afterwards)
-- [ ] In-app three-way conflict resolver
+- [x] In-app three-way conflict resolver
 - [x] Staging, unstaging and committing
 - [ ] Unified (inline) mode in the diff window
 - [ ] Multiple repositories in tabs
@@ -76,4 +76,4 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 - [x] Stash list in the left column (save, apply, pop and drop)
 - [x] Patches: save the uncommitted changes as a patch file, and apply a patch file to the work tree
 - [x] Search and filter the history by message, author or hash
-- [ ] Force push (`--force-with-lease`) with a confirmation
+- [x] Force push (`--force-with-lease`) with a confirmation

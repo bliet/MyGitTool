@@ -1,9 +1,9 @@
 use crate::{history, map};
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
-    Branch, BranchKind, CommitDetails, CommitId, FastForward, FileChange, FileContent, Head,
-    OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag, Tracking, Upstream,
-    WorkTreeChanges,
+    Branch, BranchKind, CommitDetails, CommitId, ConflictSides, FastForward, FileChange,
+    FileContent, Head, OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag,
+    Tracking, Upstream, WorkTreeChanges,
 };
 use git2::{
     BranchType, Delta, Diff, DiffFindOptions, DiffFormat, DiffOptions, ErrorCode, ObjectType, Oid,
@@ -204,6 +204,7 @@ impl RepositoryReader for GitRepositoryReader {
         Ok(WorkTreeChanges {
             staged: changes(&mut staged, Conflicts::Skip)?,
             unstaged: changes(&mut unstaged, Conflicts::Keep)?,
+            conflicts: map::conflict_paths(&index).map_err(map::error)?,
         })
     }
 
@@ -398,6 +399,45 @@ impl RepositoryReader for GitRepositoryReader {
         }
         let index = git.index().map_err(map::error)?;
         map::conflict_paths(&index).map_err(map::error)
+    }
+
+    fn conflict_sides(
+        &self,
+        repo: &RepositoryInfo,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<ConflictSides>, ReadError> {
+        let git = open(repo)?;
+        if git.is_bare() {
+            return Ok(None);
+        }
+        let index = git.index().map_err(map::error)?;
+        for conflict in index.conflicts().map_err(map::error)? {
+            let conflict = conflict.map_err(map::error)?;
+            let entries = [&conflict.ancestor, &conflict.our, &conflict.their];
+            let matches = entries
+                .iter()
+                .any(|entry| entry.as_ref().is_some_and(|e| e.path == path.as_bytes()));
+            if !matches {
+                continue;
+            }
+            let read =
+                |entry: &Option<git2::IndexEntry>| -> Result<Option<FileContent>, ReadError> {
+                    match entry {
+                        None => Ok(None),
+                        Some(entry) if entry.mode & 0o170000 == GITLINK_MODE => {
+                            Ok(Some(submodule(entry.id)))
+                        }
+                        Some(entry) => blob_content(&git, entry.id, limit).map(Some),
+                    }
+                };
+            return Ok(Some(ConflictSides {
+                base: read(&conflict.ancestor)?,
+                ours: read(&conflict.our)?,
+                theirs: read(&conflict.their)?,
+            }));
+        }
+        Ok(None)
     }
 
     fn pull_config(&self, repo: &RepositoryInfo, branch: &str) -> Result<PullConfig, ReadError> {

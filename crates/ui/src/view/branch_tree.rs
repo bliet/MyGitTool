@@ -29,6 +29,14 @@ pub struct TagItem {
     pub target: CommitId,
 }
 
+impl BranchItem {
+    /// Whether the local branch has an upstream configured, even one whose
+    /// ref is gone.
+    pub fn has_upstream(&self) -> bool {
+        self.ahead.is_some() || self.upstream_gone
+    }
+}
+
 impl TagItem {
     pub fn refname(&self) -> String {
         format!("refs/tags/{}", self.name)

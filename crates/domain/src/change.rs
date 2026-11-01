@@ -49,9 +49,18 @@ pub struct WorkTreeChanges {
     /// The index against the work tree, including untracked files and
     /// files with unresolved conflicts.
     pub unstaged: Vec<FileChange>,
+    /// The files with unresolved conflicts, sorted. They are among the
+    /// unstaged changes.
+    pub conflicts: Vec<String>,
 }
 
 impl WorkTreeChanges {
+    pub fn is_conflicted(&self, path: &str) -> bool {
+        self.conflicts
+            .binary_search_by(|p| p.as_str().cmp(path))
+            .is_ok()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.staged.is_empty() && self.unstaged.is_empty()
     }

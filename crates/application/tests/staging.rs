@@ -34,6 +34,7 @@ fn with_staged() -> FakeReader {
         work_tree: WorkTreeChanges {
             staged: vec![change("a.txt")],
             unstaged: Vec::new(),
+            conflicts: Vec::new(),
         },
         ..FakeReader::default()
     }
@@ -94,6 +95,7 @@ fn nothing_staged_is_refused() {
         work_tree: WorkTreeChanges {
             staged: Vec::new(),
             unstaged: vec![change("a.txt")],
+            conflicts: Vec::new(),
         },
         ..FakeReader::default()
     };

@@ -1,9 +1,9 @@
 use crate::credentials::{AllowedCredentials, Attempt, CredentialChain};
 use crate::map;
 use application::{CredentialProvider, ProgressReporter, RemoteError, RemoteOperations};
-use domain::{Progress, RepositoryInfo};
+use domain::{CommitId, Progress, RepositoryInfo};
 use git2::{
-    Cred, CredentialType, Direction, ErrorClass, ErrorCode, FetchOptions, Progress as Stats,
+    Cred, CredentialType, Direction, ErrorClass, ErrorCode, FetchOptions, Oid, Progress as Stats,
     PushOptions, Remote, RemoteCallbacks, Repository,
 };
 use std::cell::{Cell, RefCell};
@@ -56,7 +56,41 @@ impl RemoteOperations for GitRemoteOperations {
     ) -> Result<(), RemoteError> {
         // No leading `+`: the remote only accepts a fast-forward.
         let refspec = format!("refs/heads/{branch}:{remote_ref}");
-        push_refspec(repo, remote, &refspec, remote_ref, progress, credentials)
+        push_refspec(
+            repo,
+            remote,
+            &refspec,
+            remote_ref,
+            None,
+            progress,
+            credentials,
+        )
+    }
+
+    fn force_push(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        expected: Option<CommitId>,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError> {
+        let refspec = format!("+refs/heads/{branch}:{remote_ref}");
+        let lease = Lease {
+            remote_ref,
+            expected: expected.map_or(Oid::ZERO_SHA1, map::oid),
+        };
+        push_refspec(
+            repo,
+            remote,
+            &refspec,
+            remote_ref,
+            Some(lease),
+            progress,
+            credentials,
+        )
     }
 
     fn push_tag(
@@ -70,7 +104,15 @@ impl RemoteOperations for GitRemoteOperations {
         let tag_ref = format!("refs/tags/{tag}");
         // No leading `+`: an existing tag on the remote is never replaced.
         let refspec = format!("{tag_ref}:{tag_ref}");
-        push_refspec(repo, remote, &refspec, &tag_ref, progress, credentials)
+        push_refspec(
+            repo,
+            remote,
+            &refspec,
+            &tag_ref,
+            None,
+            progress,
+            credentials,
+        )
     }
 
     fn delete_branch(
@@ -86,6 +128,7 @@ impl RemoteOperations for GitRemoteOperations {
             remote,
             &format!(":{remote_ref}"),
             remote_ref,
+            None,
             progress,
             credentials,
         )?;
@@ -112,12 +155,20 @@ impl RemoteOperations for GitRemoteOperations {
     }
 }
 
+/// A force push only goes through while `remote_ref` on the remote is at
+/// `expected` (zero: does not exist).
+struct Lease<'a> {
+    remote_ref: &'a str,
+    expected: Oid,
+}
+
 /// Pushes one refspec and turns a rejection into [`RemoteError::Rejected`].
 fn push_refspec(
     repo: &RepositoryInfo,
     remote: &str,
     refspec: &str,
     remote_ref: &str,
+    lease: Option<Lease<'_>>,
     progress: &dyn ProgressReporter,
     credentials: &dyn CredentialProvider,
 ) -> Result<(), RemoteError> {
@@ -139,6 +190,18 @@ fn push_refspec(
         // accept it as a fast-forward.
         callbacks.push_negotiation(|updates| {
             for update in updates {
+                // `src` is where the remote has the ref now. The server
+                // refuses the update if it moves before the push lands.
+                if let Some(lease) = &lease
+                    && update.dst_refname_bytes() == lease.remote_ref.as_bytes()
+                    && update.src() != lease.expected
+                {
+                    *rejected.borrow_mut() = Some(RemoteError::Rejected {
+                        reference: lease.remote_ref.to_owned(),
+                        message: "the remote branch changed since the last fetch; fetch and check it before forcing".to_owned(),
+                    });
+                    return Err(git2::Error::from_str("stale lease"));
+                }
                 let tag = update.dst_refname_bytes().starts_with(b"refs/tags/");
                 let exists = !update.src().is_zero();
                 if tag && exists && update.src() != update.dst() && !update.dst().is_zero() {

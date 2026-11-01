@@ -69,11 +69,22 @@ pub fn changes_under(changes: &[FileChange], dir: &str) -> Vec<FileChange> {
         .collect()
 }
 
+/// The changes a "stage" button may stage: all but the files with
+/// conflicts, which would be marked resolved with their conflict markers.
+/// `conflicts` is sorted.
+pub fn without_conflicts(changes: Vec<FileChange>, conflicts: &[String]) -> Vec<FileChange> {
+    changes
+        .into_iter()
+        .filter(|change| conflicts.binary_search(&change.path).is_err())
+        .collect()
+}
+
 /// Why the commit button is disabled, or `None` if a commit can be made.
 pub fn commit_blocker(
     staged: usize,
     message: &str,
     ongoing: Option<OngoingOperation>,
+    conflicts: usize,
 ) -> Option<String> {
     if let Some(operation) = ongoing {
         return Some(if can_continue(operation) {
@@ -81,6 +92,9 @@ pub fn commit_blocker(
         } else {
             format!("A {operation} is in progress: finish or abort it with Git")
         });
+    }
+    if conflicts > 0 {
+        return Some("Resolve the conflicts first".to_owned());
     }
     if staged == 0 {
         return Some("Stage the changes to commit".to_owned());

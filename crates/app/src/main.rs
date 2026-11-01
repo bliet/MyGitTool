@@ -8,9 +8,9 @@ use anyhow::Context;
 use application::{
     AbortOperation, ApplyPatch, ApplyStash, Checkout, ComputeFileDiff, ContinueOperation,
     CreateBranch, CreateCommit, CreatePatch, CreateTag, DeleteBranch, DeleteTag, DropStash, Fetch,
-    GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
+    GetCommitDetails, LoadBranches, LoadConflict, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
     MergeIntoCurrent, OpenRepository, Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories,
-    RememberLayout, SaveStash, StageChanges, UserSettings, WatchRepository,
+    RememberLayout, ResolveConflict, SaveStash, StageChanges, UserSettings, WatchRepository,
 };
 use infra_config::{JsonLayoutStore, JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{
@@ -90,6 +90,8 @@ fn main() -> anyhow::Result<ExitCode> {
             create_commit: CreateCommit::new(reader.clone(), writer.clone()),
             create_patch: CreatePatch::new(reader.clone()),
             apply_patch: ApplyPatch::new(reader.clone(), writer.clone()),
+            load_conflict: LoadConflict::new(reader.clone()),
+            resolve_conflict: ResolveConflict::new(reader.clone(), writer.clone()),
             save_stash: SaveStash::new(reader.clone(), writer.clone()),
             apply_stash: ApplyStash::new(reader.clone(), writer.clone()),
             drop_stash: DropStash::new(reader.clone(), writer),

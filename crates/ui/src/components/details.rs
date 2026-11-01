@@ -1,11 +1,14 @@
-use super::diff_window::DiffWindows;
+use super::child_windows::ChildWindows;
+use super::conflict_window::ConflictServices;
 use super::operations::Operations;
 use super::session::{DetailsState, Session};
 use super::{now_seconds, update_settings};
 use crate::launch::Services;
 use crate::state::AppState;
 use crate::view::branch_tree::stash_summary;
-use crate::view::commit::{Staging, changes_under, commit_blocker, commit_label};
+use crate::view::commit::{
+    Staging, changes_under, commit_blocker, commit_label, without_conflicts,
+};
 use crate::view::file_tree::{FileViewMode, file_rows};
 use crate::view::format::details_date;
 use crate::view::operation::{Action, stash_menu};
@@ -79,7 +82,7 @@ fn UncommittedView() -> Element {
     let mut draft = session.commit_message;
     let message = draft.read().clone();
     let staged = changes.staged.len();
-    let blocker = commit_blocker(staged, &message, ongoing);
+    let blocker = commit_blocker(staged, &message, ongoing, changes.conflicts.len());
     let busy = operations.is_running();
     let ready = blocker.is_none() && !busy;
 
@@ -140,6 +143,7 @@ fn UncommittedView() -> Element {
                 changes: changes.unstaged,
                 source: DiffSource::Unstaged,
                 staging: Staging::Stage,
+                conflicts: changes.conflicts,
             }
         }
     }
@@ -350,21 +354,41 @@ fn CopyButton(text: String, label: &'static str) -> Element {
 }
 
 /// A list of changed files. With `staging`, every file and directory gets
-/// a button that stages or unstages it.
+/// a button that stages or unstages it. Files in `conflicts` (sorted) get
+/// a button that opens the resolver instead.
 #[component]
-fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource, staging: Option<Staging>) -> Element {
+fn ChangedFiles(
+    changes: Vec<FileChange>,
+    source: DiffSource,
+    staging: Option<Staging>,
+    #[props(default)] conflicts: Vec<String>,
+) -> Element {
     let session = use_context::<Session>();
     let operations = use_context::<Operations>();
     let busy = operations.is_running();
     let services = use_context::<Services>();
-    let windows = use_context::<DiffWindows>();
-    let open_diff = move |change: FileChange| {
-        windows.open(
-            services.compute_file_diff.clone(),
-            session.repo.peek().clone(),
-            source,
-            change,
-        );
+    let windows = use_context::<ChildWindows>();
+    let open_diff = {
+        let windows = windows.clone();
+        let compute = services.compute_file_diff.clone();
+        move |change: FileChange| {
+            windows.open_diff(compute.clone(), session.repo.peek().clone(), source, change);
+        }
+    };
+    let open_resolver = {
+        let conflict_services = ConflictServices {
+            load: services.load_conflict.clone(),
+            resolve: services.resolve_conflict.clone(),
+        };
+        move |path: String| {
+            let operation = session.ongoing.peek().as_ref().map(|state| state.operation);
+            windows.open_conflict(
+                conflict_services.clone(),
+                session.repo.peek().clone(),
+                path,
+                operation,
+            );
+        }
     };
     let app = use_context::<Signal<AppState>>();
     let settings = use_context::<Signal<Settings>>();
@@ -390,6 +414,8 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource, staging: Option<St
         (None, 1) => "1 changed file".to_owned(),
         (None, n) => format!("{n} changed files"),
     };
+    // What "Stage all" or "Unstage all" moves.
+    let movable = without_conflicts(changes.clone(), &conflicts);
     // A button that moves `changes` to the other list.
     let move_button = move |changes: Vec<FileChange>, name: &str| {
         let staging = staging?;
@@ -420,10 +446,11 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource, staging: Option<St
             if let Some(staging) = staging {
                 button {
                     class: "small",
-                    disabled: busy || changes.is_empty(),
+                    disabled: busy || movable.is_empty(),
+                    title: if movable.len() < changes.len() { "Files with conflicts are left out; resolve them first" } else { "" },
                     onclick: {
-                        let changes = changes.clone();
-                        move |_| operations.move_changes(staging, changes.clone())
+                        let movable = movable.clone();
+                        move |_| operations.move_changes(staging, movable.clone())
                     },
                     {staging.all_label()}
                 }
@@ -464,7 +491,34 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource, staging: Option<St
                             },
                             span { class: "status twisty", if row.collapsed { "▸" } else { "▾" } }
                             span { class: "path", "{row.name}/" }
-                            {move_button(changes_under(&changes, &row.dir), &format!("{}/", row.dir))}
+                            {move_button(without_conflicts(changes_under(&changes, &row.dir), &conflicts), &format!("{}/", row.dir))}
+                        }
+                    },
+                    Some(change) if conflicts.binary_search(&change.path).is_ok() => rsx! {
+                        li {
+                            class: "file conflicted",
+                            style: "padding-left: {indent}px; --depth: {row.depth};",
+                            title: "{change.path} has conflicts — double-click to resolve",
+                            ondoubleclick: {
+                                let path = change.path.clone();
+                                let open_resolver = open_resolver.clone();
+                                move |_| open_resolver(path.clone())
+                            },
+                            span { class: "status sC", "!" }
+                            span { class: "path", "{row.name}" }
+                            button {
+                                class: "small resolve",
+                                onclick: {
+                                    let path = change.path.clone();
+                                    let open_resolver = open_resolver.clone();
+                                    move |e| {
+                                        e.stop_propagation();
+                                        open_resolver(path.clone());
+                                    }
+                                },
+                                ondoubleclick: |e| e.stop_propagation(),
+                                "Resolve…"
+                            }
                         }
                     },
                     Some(change) => rsx! {

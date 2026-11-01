@@ -134,6 +134,84 @@ fn push_never_overwrites_commits_on_the_remote() {
     assert_eq!(ref_target(&remote, "refs/heads/main"), Some(theirs));
 }
 
+fn force_push(repo: &TestRepo) -> Result<(), OperationError> {
+    let push = push_case();
+    let plan = push.force_plan(&info(repo), "main")?;
+    push.force_push(&info(repo), &plan, &Silent, &Silent)
+}
+
+fn fetch_origin(repo: &TestRepo) {
+    application::RemoteOperations::fetch(
+        &GitRemoteOperations,
+        &info(repo),
+        "origin",
+        &Silent,
+        &Silent,
+    )
+    .unwrap();
+}
+
+#[test]
+fn force_push_replaces_a_rewritten_branch() {
+    let (remote, local) = remote_and_local();
+    let local = local.commit("a.txt", "second\n");
+    push(&local).unwrap();
+    // Rewrite the pushed commit, as an amend would.
+    {
+        let git = local.git();
+        let parent = git
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .parent(0)
+            .unwrap();
+        git.reset(parent.as_object(), git2::ResetType::Hard, None)
+            .unwrap();
+    }
+    let local = local.commit("a.txt", "second, amended\n");
+    assert!(push(&local).is_err(), "a plain push is no fast-forward");
+
+    let plan = push_case().force_plan(&info(&local), "main").unwrap();
+    assert_eq!(plan.discarded, 1);
+    assert_eq!(plan.tracking, "origin/main");
+    force_push(&local).unwrap();
+    assert_eq!(ref_target(&remote, "refs/heads/main"), Some(local.head()));
+    assert_eq!(
+        ref_target(&local, "refs/remotes/origin/main"),
+        Some(local.head())
+    );
+}
+
+#[test]
+fn force_push_refuses_commits_it_has_not_fetched() {
+    let (remote, local) = remote_and_local();
+    let theirs = push_from_elsewhere(&remote, "b.txt", "theirs\n");
+    let local = local.commit("a.txt", "ours\n");
+    let result = force_push(&local);
+    assert!(
+        matches!(
+            &result,
+            Err(OperationError::Remote(RemoteError::Rejected { message, .. }))
+                if message.contains("since the last fetch")
+        ),
+        "got {result:?}"
+    );
+    assert_eq!(ref_target(&remote, "refs/heads/main"), Some(theirs));
+
+    // Once fetched, the user has seen the commits and may discard them.
+    fetch_origin(&local);
+    assert_eq!(
+        push_case()
+            .force_plan(&info(&local), "main")
+            .unwrap()
+            .discarded,
+        1
+    );
+    force_push(&local).unwrap();
+    assert_eq!(ref_target(&remote, "refs/heads/main"), Some(local.head()));
+}
+
 #[test]
 fn branch_without_upstream_offers_the_remotes() {
     let (_remote, local) = remote_and_local();

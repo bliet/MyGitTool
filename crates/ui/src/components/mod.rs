@@ -1,4 +1,6 @@
 mod branches;
+mod child_windows;
+mod conflict_window;
 mod details;
 mod diff_window;
 mod error_banner;
@@ -15,7 +17,7 @@ use crate::launch::{Initial, Services, native_theme};
 use crate::state::{AppState, Screen};
 use crate::view::settings::theme_script;
 use application::{Settings, StorageError};
-use diff_window::DiffWindows;
+use child_windows::ChildWindows;
 use dioxus::prelude::*;
 use error_banner::ErrorBanner;
 use repository_view::RepositoryView;
@@ -31,12 +33,12 @@ pub fn App() -> Element {
     let initial = use_context::<Initial>();
     let mut state = use_context_provider(|| Signal::new(initial_state));
     let settings = use_context_provider(|| Signal::new(initial.settings));
-    let diff_windows = use_context_provider(DiffWindows::default);
+    let child_windows = use_context_provider(ChildWindows::default);
     use_context_provider(|| SettingsOpen(Signal::new(false)));
     use_layout_keeper(&services, initial.layout);
     use_drop({
-        let diff_windows = diff_windows.clone();
-        move || diff_windows.close_all()
+        let child_windows = child_windows.clone();
+        move || child_windows.close_all()
     });
 
     // The window starts with the stored theme; this follows later changes.
@@ -45,7 +47,7 @@ pub fn App() -> Element {
         let theme = theme();
         document::eval(&theme_script(theme));
         dioxus::desktop::window().set_theme(native_theme(theme));
-        diff_windows.set_theme(theme);
+        child_windows.set_theme(theme);
     });
 
     // Load the recent list once. A repository opened at startup is recorded

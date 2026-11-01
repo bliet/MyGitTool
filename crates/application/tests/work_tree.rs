@@ -24,6 +24,7 @@ fn staged_and_unstaged_changes_are_each_sorted_by_path() {
         work_tree: WorkTreeChanges {
             staged: vec![change("z.txt"), change("b.txt")],
             unstaged: vec![change("src/b.rs"), change("README.md"), change("src/a.rs")],
+            conflicts: Vec::new(),
         },
         ..FakeReader::default()
     };

@@ -2,7 +2,9 @@
 
 use super::operations::{Dialog, Operations, dialog_title};
 use super::session::Session;
-use crate::view::operation::{can_continue, ongoing_text, progress_fraction, progress_text};
+use crate::view::operation::{
+    Action, can_continue, force_push_texts, ongoing_text, progress_fraction, progress_text,
+};
 use dioxus::prelude::*;
 use domain::{CommitId, Credential, CredentialRequest, validate_branch_name, validate_tag_name};
 
@@ -122,6 +124,34 @@ pub fn DialogHost() -> Element {
                             }
                         }
                     },
+                    Dialog::PushRejected { branch, message } => rsx! {
+                        p { "The remote refused the push: {message}." }
+                        p { class: "muted",
+                            "Pull to bring in the remote commits, or force push to replace the branch "
+                            "on the remote, e.g. after rewriting your own commits."
+                        }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary",
+                                onclick: move |_| operations.start(Action::ForcePush { branch: branch.clone() }),
+                                "Force push…"
+                            }
+                        }
+                    },
+                    Dialog::ConfirmForcePush { plan } => rsx! {
+                        for text in force_push_texts(&plan) {
+                            p { "{text}" }
+                        }
+                        div { class: "dialog-buttons",
+                            button { onclick: move |_| operations.dismiss(), "Cancel" }
+                            button {
+                                class: "primary danger",
+                                onclick: move |_| operations.force_push(plan.clone()),
+                                "Force push"
+                            }
+                        }
+                    },
                     Dialog::SaveStash => rsx! {
                         SaveStashForm {}
                     },
@@ -140,22 +170,23 @@ pub fn DialogHost() -> Element {
                         p { "These files have conflicts:" }
                         FileList { files }
                         p { class: "muted",
-                            "Resolve them, then stage the result to mark them resolved."
+                            "Resolve them from the uncommitted changes, or edit and stage them yourself."
                             if pop { " The stash was kept; drop it once you are done." }
                         }
                         div { class: "dialog-buttons",
-                            button { class: "primary", onclick: move |_| operations.dismiss(), "OK" }
+                            button { class: "primary", onclick: move |_| operations.leave_conflicts(), "Resolve conflicts" }
                         }
                     },
                     Dialog::Conflicts { operation, files, .. } => rsx! {
                         p { "These files have conflicts:" }
                         FileList { files }
                         p { class: "muted",
-                            "Abort the {operation} to return to the state before it, or leave it, "
-                            "resolve the conflicts with another tool, and then continue it here."
+                            "Abort the {operation} to return to the state before it, or leave it in progress: "
+                            "resolve the conflicts here (from the uncommitted changes) or with another tool, "
+                            "and then continue it."
                         }
                         div { class: "dialog-buttons",
-                            button { onclick: move |_| operations.leave_conflicts(), "Leave for external resolution" }
+                            button { onclick: move |_| operations.leave_conflicts(), "Resolve conflicts" }
                             button { class: "primary", onclick: move |_| operations.abort(), "Abort {operation}" }
                         }
                     },

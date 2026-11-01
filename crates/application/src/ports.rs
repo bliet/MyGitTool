@@ -1,7 +1,7 @@
 use domain::{
-    Branch, Commit, CommitDetails, CommitId, Credential, CredentialRequest, FileContent, Head,
-    OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag, Tracking,
-    WorkTreeChanges,
+    Branch, Commit, CommitDetails, CommitId, ConflictSides, Credential, CredentialRequest,
+    FileContent, Head, OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision,
+    Stash, Tag, Tracking, WorkTreeChanges,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -215,6 +215,15 @@ pub trait RepositoryReader: Send + Sync {
     ) -> Result<Vec<String>, ReadError>;
     /// The files with unresolved conflicts in the index, sorted.
     fn conflicted_files(&self, repo: &RepositoryInfo) -> Result<Vec<String>, ReadError>;
+    /// The base, our and their version of the conflicted file at `path`,
+    /// or `None` if it has no conflict. A version larger than `limit`
+    /// bytes is not loaded.
+    fn conflict_sides(
+        &self,
+        repo: &RepositoryInfo,
+        path: &str,
+        limit: u64,
+    ) -> Result<Option<ConflictSides>, ReadError>;
 }
 
 /// Changes the local repository. Callers check for a dirty work tree first.
@@ -293,6 +302,14 @@ pub trait RepositoryWriter: Send + Sync {
     fn stash_apply(&self, repo: &RepositoryInfo, index: usize) -> Result<Integration, WriteError>;
     /// Deletes the stash at `index`.
     fn stash_drop(&self, repo: &RepositoryInfo, index: usize) -> Result<(), WriteError>;
+    /// Resolves the conflict of `path`: writes `content` to the work tree
+    /// (or deletes the file for `None`) and stages the result.
+    fn resolve_conflict(
+        &self,
+        repo: &RepositoryInfo,
+        path: &str,
+        content: Option<&[u8]>,
+    ) -> Result<(), WriteError>;
     /// Applies a patch in Git's diff format to the work tree, like `git
     /// apply`. Nothing changes unless every hunk applies.
     fn apply_patch(&self, repo: &RepositoryInfo, patch: &[u8]) -> Result<(), WriteError>;
@@ -341,6 +358,21 @@ pub trait RemoteOperations: Send + Sync {
         branch: &str,
         remote: &str,
         remote_ref: &str,
+        progress: &dyn ProgressReporter,
+        credentials: &dyn CredentialProvider,
+    ) -> Result<(), RemoteError>;
+    /// Replaces `remote_ref` on `remote` with the local `branch`, even if
+    /// that is not a fast-forward, but only while the remote branch is at
+    /// `expected` (`None`: does not exist), like `git push
+    /// --force-with-lease`. Otherwise it is rejected.
+    #[allow(clippy::too_many_arguments)]
+    fn force_push(
+        &self,
+        repo: &RepositoryInfo,
+        branch: &str,
+        remote: &str,
+        remote_ref: &str,
+        expected: Option<CommitId>,
         progress: &dyn ProgressReporter,
         credentials: &dyn CredentialProvider,
     ) -> Result<(), RemoteError>;

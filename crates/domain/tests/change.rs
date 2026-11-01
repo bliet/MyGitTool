@@ -27,6 +27,7 @@ fn a_file_with_staged_and_unstaged_changes_counts_once() {
     let changes = WorkTreeChanges {
         staged: vec![change("a.txt"), change("b.txt")],
         unstaged: vec![change("b.txt"), change("c.txt")],
+        conflicts: Vec::new(),
     };
     assert_eq!(changes.file_count(), 3);
     assert!(!changes.is_empty());
@@ -37,6 +38,7 @@ fn no_changes_are_empty() {
     assert!(WorkTreeChanges::default().is_empty());
     let only_unstaged = WorkTreeChanges {
         unstaged: vec![change("a.txt")],
+        conflicts: Vec::new(),
         ..WorkTreeChanges::default()
     };
     assert!(!only_unstaged.is_empty());

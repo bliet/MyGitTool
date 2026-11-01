@@ -4,10 +4,10 @@ use crate::view::settings::theme_script;
 use application::{
     AbortOperation, ApplyPatch, ApplyStash, Checkout, ComputeFileDiff, ContinueOperation,
     CreateBranch, CreateCommit, CreatePatch, CreateTag, DeleteBranch, DeleteTag, DropStash, Fetch,
-    GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
+    GetCommitDetails, LoadBranches, LoadConflict, LoadHistory, LoadOngoing, LoadWorkTreeChanges,
     MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository, Pull, Push, PushTag,
-    RebaseCurrentOnto, RecentRepositories, RememberLayout, SaveStash, Settings, StageChanges,
-    Startup, Theme, UserSettings, WatchRepository, WindowLayout,
+    RebaseCurrentOnto, RecentRepositories, RememberLayout, ResolveConflict, SaveStash, Settings,
+    StageChanges, Startup, Theme, UserSettings, WatchRepository, WindowLayout,
 };
 use dioxus::desktop::icon_from_memory;
 use dioxus::desktop::tao::window::{Icon, Theme as NativeTheme};
@@ -88,6 +88,8 @@ pub struct Services {
     pub drop_stash: DropStash,
     pub create_patch: CreatePatch,
     pub apply_patch: ApplyPatch,
+    pub load_conflict: LoadConflict,
+    pub resolve_conflict: ResolveConflict,
 }
 
 /// What the app starts with: the settings and the window layout, loaded

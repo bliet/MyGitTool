@@ -1,19 +1,14 @@
 //! The diff window: a separate desktop window per changed file.
 
 use super::blocking;
-use crate::launch::{custom_head, native_theme, window_icon};
 use crate::view::diff::{
-    DIFF_ROW_HEIGHT, DiffKey, Direction, Jump, Step, at_end_hint, content_width, format_size, jump,
-    rows_on_screen, scroll_top_for, segments, side_class, side_labels, status, window_title,
+    DIFF_ROW_HEIGHT, Direction, Jump, Step, at_end_hint, content_width, format_size, jump,
+    rows_on_screen, scroll_top_for, segments, side_class, side_labels, status,
 };
 use crate::view::history::visible_rows;
-use crate::view::settings::theme_script;
-use application::{ComputeFileDiff, MAX_DIFF_FILE_SIZE, Theme};
-use dioxus::desktop::{Config, LogicalSize, WeakDesktopContext, WindowBuilder};
+use application::{ComputeFileDiff, MAX_DIFF_FILE_SIZE};
 use dioxus::prelude::*;
 use domain::{DiffBody, DiffLine, DiffSource, FileChange, FileDiff, RepositoryInfo};
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::rc::Rc;
 
 const OLD_PANE_ID: &str = "diff-old";
@@ -43,101 +38,6 @@ const WINDOW_SCRIPT: &str = r#"
     }, { capture: true, passive: true, signal });
     await new Promise(() => {});
 "#;
-
-/// The open diff windows of the app, and the theme they use. A `None` entry
-/// is a window that is still being created.
-#[derive(Clone, Default)]
-pub struct DiffWindows {
-    windows: Rc<RefCell<HashMap<DiffKey, Option<WeakDesktopContext>>>>,
-    theme: Rc<Cell<Theme>>,
-}
-
-impl DiffWindows {
-    /// Applies `theme` to the open windows and the ones opened later.
-    pub fn set_theme(&self, theme: Theme) {
-        if self.theme.replace(theme) == theme {
-            return;
-        }
-        let script = theme_script(theme);
-        for window in self.windows.borrow().values().flatten() {
-            if let Some(window) = window.upgrade() {
-                // A window that cannot run the script keeps its old theme.
-                let _ = window.webview.evaluate_script(&script);
-                window.window.set_theme(native_theme(theme));
-            }
-        }
-    }
-
-    /// Opens the diff of `change`, or focuses its window if it is open.
-    pub fn open(
-        &self,
-        compute: ComputeFileDiff,
-        repo: RepositoryInfo,
-        source: DiffSource,
-        change: FileChange,
-    ) {
-        let key = DiffKey {
-            repo: repo.root().to_path_buf(),
-            source,
-            path: change.path.clone(),
-        };
-        match self.windows.borrow().get(&key) {
-            Some(None) => return,
-            Some(Some(weak)) => {
-                if let Some(window) = weak.upgrade() {
-                    window.window.set_focus();
-                    return;
-                }
-            }
-            None => {}
-        }
-        self.windows.borrow_mut().insert(key.clone(), None);
-
-        let title = window_title(&change.path, source);
-        let dom = VirtualDom::new_with_props(
-            DiffWindow,
-            DiffWindowProps {
-                repo,
-                source,
-                change,
-            },
-        )
-        .with_root_context(compute);
-        let builder = WindowBuilder::new()
-            .with_title(title)
-            .with_inner_size(LogicalSize::new(1300.0, 850.0))
-            .with_min_inner_size(LogicalSize::new(500.0, 300.0))
-            .with_theme(native_theme(self.theme.get()))
-            .with_window_icon(window_icon());
-        let config = Config::new()
-            .with_window(builder)
-            .with_menu(None)
-            .with_custom_head(custom_head(self.theme.get()));
-        let pending = dioxus::desktop::window().new_window(dom, config);
-        let windows = self.windows.clone();
-        spawn(async move {
-            match pending.try_resolve().await {
-                Ok(window) => {
-                    windows
-                        .borrow_mut()
-                        .insert(key, Some(Rc::downgrade(&window)));
-                }
-                Err(_) => {
-                    windows.borrow_mut().remove(&key);
-                }
-            }
-        });
-    }
-
-    /// Closes every diff window, e.g. when the main window closes.
-    pub fn close_all(&self) {
-        for weak in self.windows.borrow_mut().drain().filter_map(|(_, w)| w) {
-            if let Some(window) = weak.upgrade() {
-                window.close();
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 enum DiffState {
@@ -173,8 +73,9 @@ struct Navigation {
     at_end: Option<Direction>,
 }
 
+/// The root of a diff window. `ComputeFileDiff` is its root context.
 #[component]
-fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> Element {
+pub(super) fn DiffWindow(repo: RepositoryInfo, source: DiffSource, change: FileChange) -> Element {
     let compute = use_context::<ComputeFileDiff>();
     let mut state = use_signal(|| DiffState::Loading);
     let mut scroll_top = use_signal(|| 0.0);
