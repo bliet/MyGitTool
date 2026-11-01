@@ -3,9 +3,10 @@ use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
     Branch, BranchKind, CommitDetails, CommitId, FastForward, FileChange, FileContent, Head,
     OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking, Upstream,
+    WorkTreeChanges,
 };
 use git2::{
-    BranchType, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
+    BranchType, Delta, Diff, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Patch,
     ReferenceType, Repository, RepositoryState, Status, StatusOptions, Tree,
 };
 use std::fs;
@@ -157,29 +158,38 @@ impl RepositoryReader for GitRepositoryReader {
             commit: map::commit(&commit),
             committer: map::signature(&commit.committer()),
             message: map::text(commit.message_bytes()),
-            changes: changes(&mut diff)?,
+            changes: changes(&mut diff, Conflicts::Keep)?,
         })
     }
 
-    fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<Vec<FileChange>, ReadError> {
+    fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<WorkTreeChanges, ReadError> {
         let git = open(repo)?;
         if git.is_bare() {
-            return Ok(Vec::new());
+            return Ok(WorkTreeChanges::default());
         }
         let head_tree = match git.head() {
             Ok(head) => Some(head.peel_to_tree().map_err(map::error)?),
             Err(err) if err.code() == ErrorCode::UnbornBranch => None,
             Err(err) => return Err(map::error(err)),
         };
+        let index = git.index().map_err(map::error)?;
+        let mut staged = git
+            .diff_tree_to_index(head_tree.as_ref(), Some(&index), None)
+            .map_err(map::error)?;
         let mut options = DiffOptions::new();
         options
             .include_untracked(true)
             .recurse_untracked_dirs(true)
             .show_untracked_content(true);
-        let mut diff = git
-            .diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut options))
+        let mut unstaged = git
+            .diff_index_to_workdir(Some(&index), Some(&mut options))
             .map_err(map::error)?;
-        changes(&mut diff)
+        // A conflicted file is listed once, as unstaged: staging it is how
+        // it gets resolved.
+        Ok(WorkTreeChanges {
+            staged: changes(&mut staged, Conflicts::Skip)?,
+            unstaged: changes(&mut unstaged, Conflicts::Keep)?,
+        })
     }
 
     fn file_content(
@@ -192,6 +202,7 @@ impl RepositoryReader for GitRepositoryReader {
         let git = open(repo)?;
         let tree = match revision {
             Revision::WorkTree => return work_tree_content(&git, path, limit),
+            Revision::Index => return index_content(&git, path, limit),
             Revision::Head => match git.head() {
                 Ok(head) => head.peel_to_tree().map_err(map::error)?,
                 Err(err) if err.code() == ErrorCode::UnbornBranch => return Ok(None),
@@ -381,20 +392,44 @@ fn tree_content(
         Err(err) => return Err(map::error(err)),
     };
     match entry.kind() {
-        Some(ObjectType::Blob) => {
-            let odb = git.odb().map_err(map::error)?;
-            let (size, _) = odb.read_header(entry.id()).map_err(map::error)?;
-            let size = size as u64;
-            if size > limit {
-                return Ok(Some(FileContent::TooLarge { size }));
-            }
-            let blob = git.find_blob(entry.id()).map_err(map::error)?;
-            Ok(Some(FileContent::Bytes(blob.content().to_vec())))
-        }
+        Some(ObjectType::Blob) => blob_content(git, entry.id(), limit).map(Some),
         Some(ObjectType::Commit) => Ok(Some(submodule(entry.id()))),
         // A directory is no file, e.g. after a file was replaced by one.
         _ => Ok(None),
     }
+}
+
+/// The mode of a submodule entry (a gitlink).
+const GITLINK_MODE: u32 = 0o160000;
+
+/// The content of a file in the index. A file with unresolved conflicts
+/// has no regular entry; "our" side stands in for it.
+fn index_content(
+    git: &Repository,
+    path: &str,
+    limit: u64,
+) -> Result<Option<FileContent>, ReadError> {
+    let index = git.index().map_err(map::error)?;
+    let path = Path::new(path);
+    let Some(entry) = index.get_path(path, 0).or_else(|| index.get_path(path, 2)) else {
+        return Ok(None);
+    };
+    if entry.mode & 0o170000 == GITLINK_MODE {
+        return Ok(Some(submodule(entry.id)));
+    }
+    blob_content(git, entry.id, limit).map(Some)
+}
+
+/// The content of a blob, unless it is larger than `limit` bytes.
+fn blob_content(git: &Repository, id: Oid, limit: u64) -> Result<FileContent, ReadError> {
+    let odb = git.odb().map_err(map::error)?;
+    let (size, _) = odb.read_header(id).map_err(map::error)?;
+    let size = size as u64;
+    if size > limit {
+        return Ok(FileContent::TooLarge { size });
+    }
+    let blob = git.find_blob(id).map_err(map::error)?;
+    Ok(FileContent::Bytes(blob.content().to_vec()))
 }
 
 /// The content of a file in the work tree, read the way Git would store it.
@@ -484,8 +519,15 @@ fn remote_of(git: &Repository, refname: &str, name: &str) -> String {
         .unwrap_or_else(|_| name.split('/').next().unwrap_or(name).to_owned())
 }
 
+/// Whether a diff lists files with unresolved conflicts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Conflicts {
+    Keep,
+    Skip,
+}
+
 /// Converts a diff into file changes with line counts. Renames are detected.
-fn changes(diff: &mut Diff<'_>) -> Result<Vec<FileChange>, ReadError> {
+fn changes(diff: &mut Diff<'_>, conflicts: Conflicts) -> Result<Vec<FileChange>, ReadError> {
     diff.find_similar(Some(DiffFindOptions::new().renames(true)))
         .map_err(map::error)?;
     let mut changes = Vec::new();
@@ -493,6 +535,9 @@ fn changes(diff: &mut Diff<'_>) -> Result<Vec<FileChange>, ReadError> {
         let Some(delta) = diff.get_delta(index) else {
             continue;
         };
+        if conflicts == Conflicts::Skip && delta.status() == Delta::Conflicted {
+            continue;
+        }
         let Some(kind) = map::change_kind(delta.status()) else {
             continue;
         };

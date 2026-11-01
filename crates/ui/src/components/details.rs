@@ -1,8 +1,10 @@
 use super::diff_window::DiffWindows;
+use super::operations::Operations;
 use super::session::{DetailsState, Session};
 use super::{now_seconds, update_settings};
 use crate::launch::Services;
 use crate::state::AppState;
+use crate::view::commit::{Staging, changes_under, commit_blocker, commit_label};
 use crate::view::file_tree::{FileViewMode, file_rows};
 use crate::view::format::details_date;
 use application::{DateFormat, RefLabelKind, Settings};
@@ -37,7 +39,6 @@ pub fn DetailsColumn() -> Element {
     let session = use_context::<Session>();
     use_context_provider(ClipboardHolder::default);
     let details = session.details.read().clone();
-    let work_tree = session.work_tree.read().clone();
 
     rsx! {
         section { class: "column details",
@@ -53,14 +54,71 @@ pub fn DetailsColumn() -> Element {
                     p { class: "column-error", "{message}" }
                 },
                 DetailsState::Uncommitted => rsx! {
-                    div { class: "details-body",
-                        h3 { class: "subject", "Uncommitted changes" }
-                        ChangedFiles { changes: work_tree, source: DiffSource::WorkTree }
-                    }
+                    UncommittedView {}
                 },
                 DetailsState::Commit(details) => rsx! {
                     CommitView { details: *details }
                 },
+            }
+        }
+    }
+}
+
+/// The staged and unstaged changes, and the box to commit the staged ones.
+#[component]
+fn UncommittedView() -> Element {
+    let session = use_context::<Session>();
+    let operations = use_context::<Operations>();
+    let changes = session.work_tree.read().clone();
+    let ongoing = session.ongoing.read().as_ref().map(|state| state.operation);
+    let mut draft = session.commit_message;
+    let message = draft.read().clone();
+    let staged = changes.staged.len();
+    let blocker = commit_blocker(staged, &message, ongoing);
+    let busy = operations.is_running();
+    let ready = blocker.is_none() && !busy;
+
+    rsx! {
+        div { class: "details-body",
+            h3 { class: "subject", "Uncommitted changes" }
+            div { class: "commit-box",
+                textarea {
+                    rows: "4",
+                    value: "{message}",
+                    placeholder: "Commit message",
+                    aria_label: "Commit message",
+                    spellcheck: "true",
+                    oninput: move |e| draft.set(e.value()),
+                    onkeydown: move |e: KeyboardEvent| {
+                        let modifiers = e.modifiers();
+                        if e.key() == Key::Enter && (modifiers.ctrl() || modifiers.meta()) {
+                            e.prevent_default();
+                            if ready {
+                                operations.commit();
+                            }
+                        }
+                    },
+                }
+                div { class: "commit-row",
+                    span { class: "hint", {blocker.clone().unwrap_or_default()} }
+                    button {
+                        class: "primary",
+                        disabled: !ready,
+                        title: blocker.unwrap_or_else(|| "Commit the staged changes (Ctrl+Enter)".to_owned()),
+                        onclick: move |_| operations.commit(),
+                        {commit_label(staged)}
+                    }
+                }
+            }
+            ChangedFiles {
+                changes: changes.staged,
+                source: DiffSource::Staged,
+                staging: Staging::Unstage,
+            }
+            ChangedFiles {
+                changes: changes.unstaged,
+                source: DiffSource::Unstaged,
+                staging: Staging::Stage,
             }
         }
     }
@@ -193,9 +251,13 @@ fn CopyButton(text: String, label: &'static str) -> Element {
     }
 }
 
+/// A list of changed files. With `staging`, every file and directory gets
+/// a button that stages or unstages it.
 #[component]
-fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
+fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource, staging: Option<Staging>) -> Element {
     let session = use_context::<Session>();
+    let operations = use_context::<Operations>();
+    let busy = operations.is_running();
     let services = use_context::<Services>();
     let windows = use_context::<DiffWindows>();
     let open_diff = move |change: FileChange| {
@@ -225,17 +287,49 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
     let rows = file_rows(&changes, current, &collapsed_dirs.read());
     let additions: usize = changes.iter().map(|c| c.additions).sum();
     let deletions: usize = changes.iter().map(|c| c.deletions).sum();
-    let count_label = match changes.len() {
-        1 => "1 changed file".to_owned(),
-        n => format!("{n} changed files"),
+    let count_label = match (staging, changes.len()) {
+        (Some(staging), n) => staging.title(n),
+        (None, 1) => "1 changed file".to_owned(),
+        (None, n) => format!("{n} changed files"),
+    };
+    // A button that moves `changes` to the other list.
+    let move_button = move |changes: Vec<FileChange>, name: &str| {
+        let staging = staging?;
+        Some(rsx! {
+            button {
+                class: "icon stage",
+                title: staging.tooltip(name),
+                disabled: busy,
+                onclick: move |e| {
+                    e.stop_propagation();
+                    operations.move_changes(staging, changes.clone());
+                },
+                // Two quick clicks must not also open the diff.
+                ondoubleclick: |e| e.stop_propagation(),
+                {staging.symbol()}
+            }
+        })
     };
 
     rsx! {
         div { class: "files-header",
             span { class: "files-title", "{count_label}" }
-            span { class: "additions", "+{additions}" }
-            span { class: "deletions", "−{deletions}" }
+            if !changes.is_empty() {
+                span { class: "additions", "+{additions}" }
+                span { class: "deletions", "−{deletions}" }
+            }
             div { class: "spacer" }
+            if let Some(staging) = staging {
+                button {
+                    class: "small",
+                    disabled: busy || changes.is_empty(),
+                    onclick: {
+                        let changes = changes.clone();
+                        move |_| operations.move_changes(staging, changes.clone())
+                    },
+                    {staging.all_label()}
+                }
+            }
             div { class: "toggle",
                 button {
                     class: if current == FileViewMode::Tree { "active" } else { "" },
@@ -250,6 +344,9 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
             }
         }
         ul { class: if guides { "files guides" } else { "files" },
+            if let (Some(staging), true) = (staging, changes.is_empty()) {
+                li { class: "file empty muted", {staging.empty_text()} }
+            }
             for (row, indent) in rows.into_iter().map(|r| { let indent = 8 + r.depth * INDENT; (r, indent) }) {
                 match row.change.map(|i| &changes[i]) {
                     None => rsx! {
@@ -269,6 +366,7 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
                             },
                             span { class: "status twisty", if row.collapsed { "▸" } else { "▾" } }
                             span { class: "path", "{row.name}/" }
+                            {move_button(changes_under(&changes, &row.dir), &format!("{}/", row.dir))}
                         }
                     },
                     Some(change) => rsx! {
@@ -294,6 +392,7 @@ fn ChangedFiles(changes: Vec<FileChange>, source: DiffSource) -> Element {
                                 span { class: "additions", "+{change.additions}" }
                                 span { class: "deletions", "−{change.deletions}" }
                             }
+                            {move_button(vec![change.clone()], &change.path)}
                         }
                     },
                 }

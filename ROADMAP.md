@@ -68,7 +68,7 @@ Tick each item (`[x]`) when it is merged. Milestones are built in order, and eac
 
 - [ ] Auto-stash before checkout, pull, merge and rebase (and reapply afterwards)
 - [ ] In-app three-way conflict resolver
-- [ ] Staging, unstaging and committing
+- [x] Staging, unstaging and committing
 - [ ] Unified (inline) mode in the diff window
 - [ ] Multiple repositories in tabs
 - [ ] Optional credential storage in the OS keychain

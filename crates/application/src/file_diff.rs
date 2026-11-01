@@ -30,7 +30,7 @@ impl ComputeFileDiff {
     }
 
     /// Diffs `change` as listed for `source`: a commit against its first
-    /// parent, or HEAD against the work tree.
+    /// parent, HEAD against the index, or the index against the work tree.
     pub fn compute(
         &self,
         repo: &RepositoryInfo,
@@ -51,7 +51,8 @@ impl ComputeFileDiff {
                 DiffSource::Commit { id, parent } => {
                     (parent.map(Revision::Commit), Revision::Commit(id))
                 }
-                DiffSource::WorkTree => (Some(Revision::Head), Revision::WorkTree),
+                DiffSource::Staged => (Some(Revision::Head), Revision::Index),
+                DiffSource::Unstaged => (Some(Revision::Index), Revision::WorkTree),
             };
             let old = match (old_revision, &old_path) {
                 (Some(revision), Some(path)) => self.read(repo, revision, path)?,

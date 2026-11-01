@@ -16,6 +16,7 @@ mod recent_repositories;
 mod refs;
 mod search;
 mod settings;
+mod staging;
 mod sync;
 mod tags;
 mod watch;
@@ -43,6 +44,7 @@ pub use recent_repositories::{DEFAULT_CAPACITY, RecentRepositories};
 pub use refs::{LoadBranches, RefIndex, RefLabel, RefLabelKind, RemoteBranches, RepositoryRefs};
 pub use search::CommitQuery;
 pub use settings::UserSettings;
+pub use staging::{CreateCommit, StageChanges};
 pub use sync::{
     AbortOperation, Fetch, FetchTarget, IntegrationOutcome, OperationError, Pull, Push,
     PushDestination, PushPlan,

@@ -3,9 +3,10 @@ use application::{Integration, RepositoryWriter, WriteError};
 use domain::{CommitId, RepositoryInfo};
 use git2::build::CheckoutBuilder;
 use git2::{
-    BranchType, ErrorCode, Index, MergeOptions, Rebase, RebaseOptions, Repository, RepositoryState,
-    ResetType, Signature,
+    BranchType, Commit, Delta, DiffOptions, ErrorCode, Index, IndexEntry, IndexTime, MergeOptions,
+    Rebase, RebaseOptions, Repository, RepositoryState, ResetType, Signature,
 };
+use std::path::Path;
 
 /// Changes repositories with git2. Like the reader, it opens the repository
 /// on every call.
@@ -249,6 +250,105 @@ impl RepositoryWriter for GitRepositoryWriter {
                 "there is no merge or rebase to continue".to_owned(),
             )),
         }
+    }
+
+    fn stage(&self, repo: &RepositoryInfo, paths: &[String]) -> Result<(), WriteError> {
+        let git = open(repo)?;
+        let workdir = git
+            .workdir()
+            .ok_or_else(|| WriteError::Backend("a bare repository has no work tree".to_owned()))?
+            .to_path_buf();
+        let mut index = git.index().map_err(error)?;
+        for path in paths {
+            // Both calls also drop the conflict entries of the path.
+            if workdir.join(path).symlink_metadata().is_ok() {
+                index.add_path(Path::new(path)).map_err(error)?;
+            } else {
+                index.remove_path(Path::new(path)).map_err(error)?;
+            }
+        }
+        index.write().map_err(error)
+    }
+
+    fn unstage(&self, repo: &RepositoryInfo, paths: &[String]) -> Result<(), WriteError> {
+        // Like libgit2's `git_reset_default`, but with literal paths: that
+        // one treats them as glob patterns.
+        let git = open(repo)?;
+        let head_tree = match git.head() {
+            Ok(head) => Some(head.peel_to_tree().map_err(error)?),
+            Err(err) if err.code() == ErrorCode::UnbornBranch => None,
+            Err(err) => return Err(error(err)),
+        };
+        let mut index = git.index().map_err(error)?;
+        let mut options = DiffOptions::new();
+        options.disable_pathspec_match(true);
+        for path in paths {
+            options.pathspec(path.as_str());
+        }
+        let diff = git
+            .diff_tree_to_index(head_tree.as_ref(), Some(&index), Some(&mut options))
+            .map_err(error)?;
+        for delta in diff.deltas() {
+            let head = delta.old_file();
+            let path = delta
+                .new_file()
+                .path_bytes()
+                .or_else(|| head.path_bytes())
+                .unwrap_or_default()
+                .to_vec();
+            match delta.status() {
+                // Not staged; resolving is done by staging.
+                Delta::Conflicted => {}
+                Delta::Added => index
+                    .remove_path(Path::new(&map::text(&path)))
+                    .map_err(error)?,
+                _ => index
+                    .add(&IndexEntry {
+                        // Zero stat data makes Git compare the file's
+                        // content the next time instead of trusting it.
+                        ctime: IndexTime::new(0, 0),
+                        mtime: IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: head.mode().into(),
+                        uid: 0,
+                        gid: 0,
+                        file_size: 0,
+                        id: head.id(),
+                        flags: 0,
+                        flags_extended: 0,
+                        path,
+                    })
+                    .map_err(error)?,
+            }
+        }
+        index.write().map_err(error)
+    }
+
+    fn commit(&self, repo: &RepositoryInfo, message: &str) -> Result<CommitId, WriteError> {
+        let git = open(repo)?;
+        let mut index = git.index().map_err(error)?;
+        let tree = git
+            .find_tree(index.write_tree().map_err(error)?)
+            .map_err(error)?;
+        let parent = match git.head() {
+            Ok(head) => Some(head.peel_to_commit().map_err(error)?),
+            Err(err) if err.code() == ErrorCode::UnbornBranch => None,
+            Err(err) => return Err(error(err)),
+        };
+        let parents: Vec<&Commit<'_>> = parent.iter().collect();
+        let signature = git.signature().map_err(error)?;
+        let id = git
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                message,
+                &tree,
+                &parents,
+            )
+            .map_err(error)?;
+        Ok(map::commit_id(id))
     }
 
     fn set_tracking(

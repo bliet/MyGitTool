@@ -38,8 +38,8 @@ fn large_repository_timings() {
         .load(&repo)
         .unwrap();
     eprintln!(
-        "work tree: {} changes in {:?}",
-        changes.len(),
+        "work tree: {} changed files in {:?}",
+        changes.file_count(),
         start.elapsed()
     );
 

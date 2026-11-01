@@ -9,7 +9,7 @@ use application::{
     CommitQuery, HistoryPager, HistoryScope, OngoingState, RefIndex, RepoChanges, RepositoryRefs,
 };
 use dioxus::prelude::*;
-use domain::{CommitDetails, CommitId, FileChange, RepositoryInfo};
+use domain::{CommitDetails, CommitId, RepositoryInfo, WorkTreeChanges};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -52,7 +52,9 @@ pub struct Session {
     pub search_input: Signal<String>,
     /// The search the history shows, applied shortly after typing stops.
     pub search: Signal<String>,
-    pub work_tree: Signal<Vec<FileChange>>,
+    pub work_tree: Signal<WorkTreeChanges>,
+    /// The message typed into the commit box, kept while browsing.
+    pub commit_message: Signal<String>,
     /// A merge, rebase or similar in progress, e.g. after conflicts.
     pub ongoing: Signal<Option<OngoingState>>,
     pub selection: Signal<Option<Selection>>,
@@ -83,7 +85,8 @@ impl Session {
             filter: Signal::new(None),
             search_input: Signal::new(String::new()),
             search: Signal::new(String::new()),
-            work_tree: Signal::new(Vec::new()),
+            work_tree: Signal::new(WorkTreeChanges::default()),
+            commit_message: Signal::new(String::new()),
             ongoing: Signal::new(None),
             selection: Signal::new(None),
             selected_branch: Signal::new(None),
@@ -162,13 +165,18 @@ impl Session {
         }
     }
 
+    /// Reloads the staged and unstaged changes, e.g. after staging.
+    pub fn reload_work_tree(self) {
+        spawn(async move { self.load_work_tree().await });
+    }
+
     async fn load_work_tree(mut self) {
         let load = self.services.peek().load_work_tree_changes.clone();
         let repo = self.repo.peek().clone();
         // The history still works without the uncommitted row.
         let changes = match blocking(move || load.load(&repo)).await {
             Ok(Ok(changes)) => changes,
-            Ok(Err(_)) | Err(_) => Vec::new(),
+            Ok(Err(_)) | Err(_) => WorkTreeChanges::default(),
         };
         if *self.work_tree.peek() != changes {
             self.work_tree.set(changes);

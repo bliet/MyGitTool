@@ -453,6 +453,34 @@ button.copy { padding: 0 4px; font-size: 12px; }
 .status.sD { color: var(--del); }
 .status.sM { color: var(--accent); }
 .status.sR, .status.sT { color: var(--lane-3); }
+.file.empty { padding-left: 8px; }
+.files-header button.small { padding: 1px 8px; font-size: 12px; }
+/* Shown on hover, so the lists stay calm while reading them. */
+.file button.stage {
+  padding: 0 6px;
+  line-height: 18px;
+  font-weight: 700;
+  visibility: hidden;
+}
+.file:hover button.stage, .file button.stage:focus-visible { visibility: visible; }
+
+.commit-box { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.commit-box textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  resize: vertical;
+  min-height: 48px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.commit-box textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.commit-row { display: flex; align-items: center; gap: 8px; }
+.commit-row .hint { flex: 1; min-width: 0; color: var(--fg-muted); font-size: 12px; }
+.commit-row button.primary { padding: 4px 14px; }
 .additions { color: var(--add); font-size: 12px; font-variant-numeric: tabular-nums; }
 .deletions { color: var(--del); font-size: 12px; font-variant-numeric: tabular-nums; }
 
@@ -722,3 +750,6 @@ button.copy { padding: 0 4px; font-size: 12px; }
 .dialog-fields input[aria-invalid="true"] { border-color: var(--danger); }
 button.primary.danger { background: var(--danger); border-color: var(--danger); }
 button.primary:disabled { filter: none; }
+/* Keeps the coloured background that the light text needs. */
+button.primary:disabled:hover { background: var(--accent); }
+button.primary.danger:disabled:hover { background: var(--danger); }

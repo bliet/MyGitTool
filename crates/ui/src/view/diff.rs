@@ -209,7 +209,8 @@ pub fn side_labels(source: DiffSource) -> (String, String) {
             parent.map_or_else(|| "(no parent)".to_owned(), |p| p.short()),
             id.short(),
         ),
-        DiffSource::WorkTree => ("HEAD".to_owned(), "Working tree".to_owned()),
+        DiffSource::Staged => ("HEAD".to_owned(), "Index".to_owned()),
+        DiffSource::Unstaged => ("Index".to_owned(), "Working tree".to_owned()),
     }
 }
 
@@ -218,7 +219,8 @@ pub fn window_title(path: &str, source: DiffSource) -> String {
     let name = path.rsplit('/').next().unwrap_or(path);
     match source {
         DiffSource::Commit { id, .. } => format!("{name} @ {} — MyGitTool", id.short()),
-        DiffSource::WorkTree => format!("{name} (working tree) — MyGitTool"),
+        DiffSource::Staged => format!("{name} (staged) — MyGitTool"),
+        DiffSource::Unstaged => format!("{name} (working tree) — MyGitTool"),
     }
 }
 

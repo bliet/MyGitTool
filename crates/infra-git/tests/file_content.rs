@@ -103,7 +103,7 @@ fn computes_a_work_tree_diff_end_to_end() {
         .write("a.txt", "keep\nnew\nmore\n");
     let changes = GitRepositoryReader.work_tree_changes(&info(&repo)).unwrap();
     let diff = ComputeFileDiff::new(Arc::new(GitRepositoryReader))
-        .compute(&info(&repo), DiffSource::WorkTree, &changes[0])
+        .compute(&info(&repo), DiffSource::Unstaged, &changes.unstaged[0])
         .unwrap();
     let DiffBody::Text(text) = diff.body else {
         panic!("expected a text diff, got {:?}", diff.body);
@@ -144,7 +144,46 @@ fn binary_files_are_reported_as_binary() {
         .write("img.bin", "a\0c");
     let changes = GitRepositoryReader.work_tree_changes(&info(&repo)).unwrap();
     let diff = ComputeFileDiff::new(Arc::new(GitRepositoryReader))
-        .compute(&info(&repo), DiffSource::WorkTree, &changes[0])
+        .compute(&info(&repo), DiffSource::Unstaged, &changes.unstaged[0])
         .unwrap();
     assert_eq!(diff.body, DiffBody::Binary);
+}
+
+#[test]
+fn reads_a_staged_file_from_the_index() {
+    let repo = TestRepo::new()
+        .commit("a.txt", "committed")
+        .write("a.txt", "staged")
+        .stage("a.txt")
+        .write("a.txt", "edited");
+    assert_eq!(read(&repo, Revision::Head, "a.txt"), bytes("committed"));
+    assert_eq!(read(&repo, Revision::Index, "a.txt"), bytes("staged"));
+    assert_eq!(read(&repo, Revision::WorkTree, "a.txt"), bytes("edited"));
+    assert_eq!(read(&repo, Revision::Index, "nope.txt"), None);
+}
+
+#[test]
+fn staged_and_unstaged_diffs_split_at_the_index() {
+    let repo = TestRepo::new()
+        .commit("a.txt", "one\n")
+        .write("a.txt", "one\ntwo\n")
+        .stage("a.txt")
+        .write("a.txt", "one\ntwo\nthree\n");
+    let changes = GitRepositoryReader.work_tree_changes(&info(&repo)).unwrap();
+    let compute = ComputeFileDiff::new(Arc::new(GitRepositoryReader));
+    let rows = |source, change| {
+        let diff = compute.compute(&info(&repo), source, change).unwrap();
+        let DiffBody::Text(text) = diff.body else {
+            panic!("expected a text diff, got {:?}", diff.body);
+        };
+        text.rows
+            .iter()
+            .map(|r| r.new.as_ref().map(|l| l.text.clone()).unwrap_or_default())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(rows(DiffSource::Staged, &changes.staged[0]), ["one", "two"]);
+    assert_eq!(
+        rows(DiffSource::Unstaged, &changes.unstaged[0]),
+        ["one", "two", "three"]
+    );
 }

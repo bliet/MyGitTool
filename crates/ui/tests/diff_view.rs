@@ -240,16 +240,24 @@ fn labels_and_titles_name_the_revisions() {
         "(no parent)"
     );
     assert_eq!(
-        side_labels(DiffSource::WorkTree),
-        ("HEAD".to_owned(), "Working tree".to_owned())
+        side_labels(DiffSource::Staged),
+        ("HEAD".to_owned(), "Index".to_owned())
+    );
+    assert_eq!(
+        side_labels(DiffSource::Unstaged),
+        ("Index".to_owned(), "Working tree".to_owned())
     );
     assert_eq!(
         window_title("src/main.rs", commit),
         "main.rs @ abababa — MyGitTool"
     );
     assert_eq!(
-        window_title("README.md", DiffSource::WorkTree),
+        window_title("README.md", DiffSource::Unstaged),
         "README.md (working tree) — MyGitTool"
+    );
+    assert_eq!(
+        window_title("README.md", DiffSource::Staged),
+        "README.md (staged) — MyGitTool"
     );
 }
 

@@ -2,7 +2,7 @@ mod common;
 
 use application::LoadWorkTreeChanges;
 use common::FakeReader;
-use domain::{ChangeKind, FileChange, RepositoryInfo};
+use domain::{ChangeKind, FileChange, RepositoryInfo, WorkTreeChanges};
 use std::sync::Arc;
 
 fn change(path: &str) -> FileChange {
@@ -17,14 +17,21 @@ fn change(path: &str) -> FileChange {
 }
 
 #[test]
-fn work_tree_changes_are_sorted_by_path() {
+fn staged_and_unstaged_changes_are_each_sorted_by_path() {
     let reader = FakeReader {
-        work_tree: vec![change("src/b.rs"), change("README.md"), change("src/a.rs")],
+        work_tree: WorkTreeChanges {
+            staged: vec![change("z.txt"), change("b.txt")],
+            unstaged: vec![change("src/b.rs"), change("README.md"), change("src/a.rs")],
+        },
         ..FakeReader::default()
     };
     let changes = LoadWorkTreeChanges::new(Arc::new(reader))
         .load(&RepositoryInfo::new("/r"))
         .unwrap();
-    let paths: Vec<_> = changes.iter().map(|c| c.path.as_str()).collect();
-    assert_eq!(paths, ["README.md", "src/a.rs", "src/b.rs"]);
+    let paths = |list: &[FileChange]| list.iter().map(|c| c.path.clone()).collect::<Vec<_>>();
+    assert_eq!(paths(&changes.staged), ["b.txt", "z.txt"]);
+    assert_eq!(
+        paths(&changes.unstaged),
+        ["README.md", "src/a.rs", "src/b.rs"]
+    );
 }

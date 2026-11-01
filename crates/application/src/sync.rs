@@ -57,6 +57,10 @@ pub enum OperationError {
     CannotContinue(OngoingOperation),
     #[error("resolve and stage these files first: {}", .0.join(", "))]
     UnresolvedConflicts(Vec<String>),
+    #[error("enter a commit message")]
+    EmptyCommitMessage,
+    #[error("there are no staged changes to commit")]
+    NothingStaged,
 }
 
 /// What to fetch.

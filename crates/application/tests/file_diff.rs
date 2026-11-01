@@ -119,20 +119,42 @@ fn root_commit_diffs_against_nothing() {
 }
 
 #[test]
-fn work_tree_diff_compares_head_with_the_work_tree() {
+fn staged_diff_compares_head_with_the_index() {
     let reader = Arc::new(
         FakeReader::default()
             .with_file(Revision::Head, "a.txt", "a\n")
-            .with_file(Revision::WorkTree, "a.txt", "a\nb\n"),
+            .with_file(Revision::Index, "a.txt", "a\nb\n")
+            .with_file(Revision::WorkTree, "a.txt", "a\nb\nc\n"),
     );
     let diff = ComputeFileDiff::new(reader)
         .compute(
             &repo(),
-            DiffSource::WorkTree,
+            DiffSource::Staged,
             &change("a.txt", ChangeKind::Modified),
         )
         .unwrap();
     assert_eq!(text_rows(&diff.body), [RowKind::Context, RowKind::Added]);
+}
+
+#[test]
+fn unstaged_diff_compares_the_index_with_the_work_tree() {
+    let reader = Arc::new(
+        FakeReader::default()
+            .with_file(Revision::Head, "a.txt", "a\n")
+            .with_file(Revision::Index, "a.txt", "a\nb\n")
+            .with_file(Revision::WorkTree, "a.txt", "a\nb\nc\n"),
+    );
+    let diff = ComputeFileDiff::new(reader)
+        .compute(
+            &repo(),
+            DiffSource::Unstaged,
+            &change("a.txt", ChangeKind::Modified),
+        )
+        .unwrap();
+    assert_eq!(
+        text_rows(&diff.body),
+        [RowKind::Context, RowKind::Context, RowKind::Added]
+    );
 }
 
 #[test]

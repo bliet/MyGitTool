@@ -42,7 +42,7 @@ pub fn HistoryColumn() -> Element {
         }
     };
     let history = session.history.read();
-    let uncommitted = session.work_tree.read().len();
+    let uncommitted = session.work_tree.read().file_count();
     let offset = usize::from(session.has_uncommitted_row());
     let searching = !session.search.read().trim().is_empty();
     let mut search_input = session.search_input;

@@ -1,7 +1,7 @@
 use domain::{
-    Branch, Commit, CommitDetails, CommitId, Credential, CredentialRequest, FileChange,
-    FileContent, Head, OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision,
-    Tag, Tracking,
+    Branch, Commit, CommitDetails, CommitId, Credential, CredentialRequest, FileContent, Head,
+    OngoingOperation, Progress, PullConfig, Remote, RepositoryInfo, Revision, Tag, Tracking,
+    WorkTreeChanges,
 };
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -164,9 +164,10 @@ pub trait RepositoryReader: Send + Sync {
         repo: &RepositoryInfo,
         id: CommitId,
     ) -> Result<CommitDetails, ReadError>;
-    /// Staged, unstaged and untracked changes against HEAD. Empty if the
-    /// work tree is clean or the repository is bare.
-    fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<Vec<FileChange>, ReadError>;
+    /// The staged changes (HEAD against the index) and the unstaged ones
+    /// (the index against the work tree, with untracked and conflicted
+    /// files). Empty if the work tree is clean or the repository is bare.
+    fn work_tree_changes(&self, repo: &RepositoryInfo) -> Result<WorkTreeChanges, ReadError>;
     /// The content of the file at `path` in `revision`, or `None` if there is
     /// no file at that path. A file larger than `limit` bytes is not loaded.
     fn file_content(
@@ -263,6 +264,16 @@ pub trait RepositoryWriter: Send + Sync {
     /// Continues the merge or rebase in progress once its conflicts are
     /// resolved and staged. A rebase may stop again at a later commit.
     fn continue_operation(&self, repo: &RepositoryInfo) -> Result<Integration, WriteError>;
+    /// Copies the work tree state of `paths` into the index, like `git add`:
+    /// a file that no longer exists is removed from the index, and a
+    /// conflicted file is marked resolved.
+    fn stage(&self, repo: &RepositoryInfo, paths: &[String]) -> Result<(), WriteError>;
+    /// Resets the index entries of `paths` to HEAD, like `git reset --
+    /// <paths>`. The work tree is left alone.
+    fn unstage(&self, repo: &RepositoryInfo, paths: &[String]) -> Result<(), WriteError>;
+    /// Commits the index on top of HEAD (or as the first commit of an
+    /// unborn branch) with the configured user as author and committer.
+    fn commit(&self, repo: &RepositoryInfo, message: &str) -> Result<CommitId, WriteError>;
     /// Sets `branch.<branch>.remote` and `branch.<branch>.merge`.
     fn set_tracking(
         &self,

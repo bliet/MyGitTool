@@ -5,6 +5,7 @@ use super::blocking;
 use super::session::Session;
 use crate::launch::Services;
 use crate::state::AppState;
+use crate::view::commit::{Staging, committed_notice};
 use crate::view::operation::{
     Action, MenuEntry, conflict_title, dirty_texts, integration_summary, running_label,
 };
@@ -14,7 +15,7 @@ use application::{
 };
 use dioxus::dioxus_core::{Runtime, ScopeId, current_scope_id};
 use dioxus::prelude::*;
-use domain::{CommitId, Credential, CredentialRequest, OngoingOperation, Progress};
+use domain::{CommitId, Credential, CredentialRequest, FileChange, OngoingOperation, Progress};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -414,6 +415,58 @@ impl Operations {
                 })
                 .await;
             self.finish("Delete", result, |()| summary);
+        });
+    }
+
+    /// Stages or unstages `changes`. That is quick, so it shows no status;
+    /// only a failure is reported.
+    pub fn move_changes(mut self, staging: Staging, changes: Vec<FileChange>) {
+        if self.running.peek().is_some() || changes.is_empty() {
+            return;
+        }
+        let stage = self.services.peek().stage_changes.clone();
+        let repo = self.session.repo.peek().clone();
+        self.spawn(async move {
+            let result = blocking(move || match staging {
+                Staging::Stage => stage.stage(&repo, &changes),
+                Staging::Unstage => stage.unstage(&repo, &changes),
+            })
+            .await;
+            let what = match staging {
+                Staging::Stage => "Stage",
+                Staging::Unstage => "Unstage",
+            };
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => self.fail(what, &err),
+                Err(message) => self.app.write().error = Some(message),
+            }
+            self.session.reload_work_tree();
+        });
+    }
+
+    /// Commits the staged changes with the message of the commit box,
+    /// which is cleared once the commit is made.
+    pub fn commit(self) {
+        if self.running.peek().is_some() {
+            return;
+        }
+        let create = self.services.peek().create_commit.clone();
+        let repo = self.session.repo.peek().clone();
+        let message = self.session.commit_message.peek().clone();
+        self.spawn(async move {
+            let result = {
+                let message = message.clone();
+                self.run("Committing…".to_owned(), move |_, _| {
+                    create.commit(&repo, &message)
+                })
+                .await
+            };
+            if let Some(Ok(_)) = result {
+                let mut draft = self.session.commit_message;
+                draft.set(String::new());
+            }
+            self.finish("Commit", result, |id| committed_notice(id, &message));
         });
     }
 

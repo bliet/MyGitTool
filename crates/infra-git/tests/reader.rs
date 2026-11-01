@@ -299,7 +299,9 @@ fn work_tree_changes_cover_modified_and_untracked_files() {
         .commit("a.txt", "1\n")
         .write("a.txt", "1\n2\n")
         .write("dir/new.txt", "x\n");
-    let mut changes = GitRepositoryReader.work_tree_changes(&info(&repo)).unwrap();
+    let changes = GitRepositoryReader.work_tree_changes(&info(&repo)).unwrap();
+    assert!(changes.staged.is_empty());
+    let mut changes = changes.unstaged;
     changes.sort_by(|a, b| a.path.cmp(&b.path));
     let summary: Vec<_> = changes
         .iter()

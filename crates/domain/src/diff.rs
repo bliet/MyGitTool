@@ -10,8 +10,10 @@ pub enum DiffSource {
         id: CommitId,
         parent: Option<CommitId>,
     },
-    /// HEAD against the work tree.
-    WorkTree,
+    /// HEAD against the index: the staged changes.
+    Staged,
+    /// The index against the work tree: the unstaged changes.
+    Unstaged,
 }
 
 /// A state of the repository that file content is read from.
@@ -19,6 +21,8 @@ pub enum DiffSource {
 pub enum Revision {
     Commit(CommitId),
     Head,
+    /// The staging area. For a file with unresolved conflicts, "our" side.
+    Index,
     WorkTree,
 }
 

@@ -2,11 +2,11 @@ use crate::components::App;
 use crate::state::AppState;
 use crate::view::settings::theme_script;
 use application::{
-    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateTag,
-    DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing,
-    LoadWorkTreeChanges, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent, OpenRepository,
-    Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories, RememberLayout, Settings, Startup,
-    Theme, UserSettings, WatchRepository, WindowLayout,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateCommit,
+    CreateTag, DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
+    LoadOngoing, LoadWorkTreeChanges, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, MergeIntoCurrent,
+    OpenRepository, Pull, Push, PushTag, RebaseCurrentOnto, RecentRepositories, RememberLayout,
+    Settings, StageChanges, Startup, Theme, UserSettings, WatchRepository, WindowLayout,
 };
 use dioxus::desktop::icon_from_memory;
 use dioxus::desktop::tao::window::{Icon, Theme as NativeTheme};
@@ -80,6 +80,8 @@ pub struct Services {
     pub rebase_current_onto: RebaseCurrentOnto,
     pub continue_operation: ContinueOperation,
     pub load_ongoing: LoadOngoing,
+    pub stage_changes: StageChanges,
+    pub create_commit: CreateCommit,
 }
 
 /// What the app starts with: the settings and the window layout, loaded

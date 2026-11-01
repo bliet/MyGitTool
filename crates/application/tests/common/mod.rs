@@ -144,7 +144,7 @@ pub struct FakeReader {
     pub remotes: Vec<domain::Remote>,
     pub tags: Vec<domain::Tag>,
     pub commits: Vec<domain::Commit>,
-    pub work_tree: Vec<domain::FileChange>,
+    pub work_tree: domain::WorkTreeChanges,
     pub files: HashMap<(domain::Revision, String), Vec<u8>>,
     /// Upstream config by local branch name.
     pub tracking: HashMap<String, domain::Tracking>,
@@ -185,7 +185,7 @@ impl Default for FakeReader {
             remotes: Vec::new(),
             tags: Vec::new(),
             commits: Vec::new(),
-            work_tree: Vec::new(),
+            work_tree: domain::WorkTreeChanges::default(),
             files: HashMap::new(),
             tracking: HashMap::new(),
             refs: HashMap::new(),
@@ -250,7 +250,7 @@ impl application::RepositoryReader for FakeReader {
     fn work_tree_changes(
         &self,
         _: &RepositoryInfo,
-    ) -> Result<Vec<domain::FileChange>, application::ReadError> {
+    ) -> Result<domain::WorkTreeChanges, application::ReadError> {
         Ok(self.work_tree.clone())
     }
 
@@ -448,6 +448,25 @@ impl application::RepositoryWriter for FakeWriter {
     ) -> Result<application::Integration, application::WriteError> {
         self.record("continue".to_owned());
         Ok(self.integration.clone())
+    }
+
+    fn stage(&self, _: &RepositoryInfo, paths: &[String]) -> Result<(), application::WriteError> {
+        self.record(format!("stage {}", paths.join(" ")));
+        Ok(())
+    }
+
+    fn unstage(&self, _: &RepositoryInfo, paths: &[String]) -> Result<(), application::WriteError> {
+        self.record(format!("unstage {}", paths.join(" ")));
+        Ok(())
+    }
+
+    fn commit(
+        &self,
+        _: &RepositoryInfo,
+        message: &str,
+    ) -> Result<domain::CommitId, application::WriteError> {
+        self.record(format!("commit {message:?}"));
+        Ok(id(9))
     }
 }
 

@@ -6,10 +6,11 @@
 
 use anyhow::Context;
 use application::{
-    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateTag,
-    DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory, LoadOngoing,
-    LoadWorkTreeChanges, MergeIntoCurrent, OpenRepository, Pull, Push, PushTag, RebaseCurrentOnto,
-    RecentRepositories, RememberLayout, UserSettings, WatchRepository,
+    AbortOperation, Checkout, ComputeFileDiff, ContinueOperation, CreateBranch, CreateCommit,
+    CreateTag, DeleteBranch, DeleteTag, Fetch, GetCommitDetails, LoadBranches, LoadHistory,
+    LoadOngoing, LoadWorkTreeChanges, MergeIntoCurrent, OpenRepository, Pull, Push, PushTag,
+    RebaseCurrentOnto, RecentRepositories, RememberLayout, StageChanges, UserSettings,
+    WatchRepository,
 };
 use infra_config::{JsonLayoutStore, JsonRecentRepositoriesStore, JsonSettingsStore};
 use infra_git::{
@@ -83,8 +84,10 @@ fn main() -> anyhow::Result<ExitCode> {
             push_tag: PushTag::new(reader.clone(), remote),
             merge_into_current: MergeIntoCurrent::new(reader.clone(), writer.clone()),
             rebase_current_onto: RebaseCurrentOnto::new(reader.clone(), writer.clone()),
-            continue_operation: ContinueOperation::new(reader.clone(), writer),
+            continue_operation: ContinueOperation::new(reader.clone(), writer.clone()),
             load_ongoing: LoadOngoing::new(reader.clone()),
+            stage_changes: StageChanges::new(writer.clone()),
+            create_commit: CreateCommit::new(reader.clone(), writer),
         },
         startup,
     );

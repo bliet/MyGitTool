@@ -141,6 +141,20 @@ impl TestRepo {
         self.write(file, content).commit_all(message)
     }
 
+    /// Stages the work tree state of `file`, including its deletion.
+    pub fn stage(self, file: &str) -> Self {
+        {
+            let mut index = self.repo.index().expect("open index");
+            if self.work_path(file).symlink_metadata().is_ok() {
+                index.add_path(Path::new(file)).expect("stage file");
+            } else {
+                index.remove_path(Path::new(file)).expect("stage deletion");
+            }
+            index.write().expect("write index");
+        }
+        self
+    }
+
     /// Deletes `file` from the work tree without staging it.
     pub fn delete(self, file: &str) -> Self {
         fs::remove_file(self.work_path(file)).expect("delete file");
