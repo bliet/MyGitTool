@@ -92,9 +92,16 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Releases are immutable once published, so the assets go into a
+      # draft first, and the draft is published when all are there.
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
+          draft: true
           # Alpha and beta versions are published as pre-releases.
           prerelease: ${{ endsWith(github.ref_name, '-alpha') || endsWith(github.ref_name, '-beta') }}
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
