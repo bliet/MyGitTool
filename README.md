@@ -7,6 +7,8 @@ A fast, cross-platform desktop Git client written in Rust that shows a repositor
 > [!WARNING]
 > **This tool is developed by AI.** The code, tests and documentation are written by [Claude Code](https://claude.com/claude-code). Use it at your own risk, especially for operations that modify your repository (pull, push, merge, rebase, delete branch).
 
+![The main window: branches, history graph and commit details](docs/screenshots/main-window.png)
+
 ## Features
 
 The window has three columns:
@@ -20,11 +22,17 @@ The window has three columns:
 
 **Diff window:** opens in its own window and shows the file side by side, highlighting the changed words within each line.
 
+![The diff window with word-level highlighting](docs/screenshots/diff-window.png)
+
 | Key | Action |
 |---|---|
 | `F7` | Jump to the next change |
 | `F6` | Jump to the previous change |
 | `Esc` | Close the diff window |
+
+**Conflict resolver:** when a merge or rebase stops on a conflict, you can abort it or resolve the files in the app. The resolver shows each conflict three ways (your side, their side and the common base) and lets you take either side, both in either order, or edit the result by hand.
+
+![The conflict resolver showing ours, theirs and the base version](docs/screenshots/conflict-resolver.png)
 
 Also:
 - Fetch, pull and push use your SSH agent, your default SSH keys or your git credential helper. If none of those work, the app asks for credentials and does not store them.

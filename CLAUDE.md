@@ -46,6 +46,7 @@ cargo clippy --workspace --all-targets -- -D warnings   # lints (CI enforced)
 scripts/package.sh                           # release package for this platform into dist/
 scripts/package-arch.sh                      # pacman package (.pkg.tar.zst) into dist/, on Arch
 MYGITTOOL_PERF_REPO=<big repo> cargo test --release -p infra-git --test performance -- --ignored --nocapture
+scripts/demo-repo.sh <dir> [--conflict]       # demo repository for the README screenshots
 ```
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which packages Linux (including a pacman package), Windows and macOS builds and publishes them as a GitHub release. The packages are named after the version in `Cargo.toml`, so bump it (and commit the updated `Cargo.lock`) before tagging; the workflow fails if the tag doesn't match `v<version>`. Versions ending in `-alpha` or `-beta` are published as pre-releases.
