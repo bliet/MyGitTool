@@ -3,7 +3,7 @@
 use crate::view::branch_tree::{BranchItem, TagItem};
 use crate::view::diff::format_size;
 use application::{CheckoutTarget, FetchTarget, ForcePushPlan, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress, Stash, WebLink};
+use domain::{CommitId, OngoingOperation, Progress, Stash, TagPresence, WebLink};
 
 /// An operation the user can start from a menu or the toolbar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,8 +245,8 @@ pub fn commit_menu(id: CommitId) -> Vec<MenuEntry> {
     ]
 }
 
-/// The context menu of a tag: branch from it, push it to each remote, and
-/// delete it here or on each remote.
+/// The context menu of a tag: branch from it, push it to each remote that
+/// lacks it, and delete it here or on each remote that may have it.
 pub fn tag_menu(tag: &TagItem, remotes: &[String]) -> Vec<MenuEntry> {
     let mut entries = vec![entry(
         "Create branch from here…",
@@ -255,7 +255,10 @@ pub fn tag_menu(tag: &TagItem, remotes: &[String]) -> Vec<MenuEntry> {
             from: tag.name.clone(),
         },
     )];
-    for (i, remote) in remotes.iter().enumerate() {
+    let push_to = remotes
+        .iter()
+        .filter(|remote| tag.presence_on(remote) != Some(TagPresence::Same));
+    for (i, remote) in push_to.enumerate() {
         let push = entry(
             format!("Push {} to {remote}", tag.name),
             Action::PushTag {
@@ -271,7 +274,10 @@ pub fn tag_menu(tag: &TagItem, remotes: &[String]) -> Vec<MenuEntry> {
             tag: tag.name.clone(),
         },
     )));
-    for remote in remotes {
+    let delete_from = remotes
+        .iter()
+        .filter(|remote| tag.presence_on(remote) != Some(TagPresence::Missing));
+    for remote in delete_from {
         entries.push(entry(
             format!("Delete {} from {remote}…", tag.name),
             Action::DeleteRemoteTag {

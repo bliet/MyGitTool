@@ -10,6 +10,7 @@ mod locator;
 mod map;
 mod reader;
 mod remote;
+mod remote_tags;
 mod watcher;
 mod writer;
 

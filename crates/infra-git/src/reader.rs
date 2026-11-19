@@ -1,9 +1,9 @@
-use crate::{history, map};
+use crate::{history, map, remote_tags};
 use application::{HistoryCursor, HistoryScope, ReadError, RepositoryReader};
 use domain::{
     Branch, BranchKind, CommitDetails, CommitId, ConflictSides, FastForward, FileChange,
-    FileContent, Head, OngoingOperation, PullConfig, Remote, RepositoryInfo, Revision, Stash, Tag,
-    Tracking, Upstream, WorkTreeChanges,
+    FileContent, Head, OngoingOperation, PullConfig, Remote, RemoteTag, RepositoryInfo, Revision,
+    Stash, Tag, TagPresence, Tracking, Upstream, WorkTreeChanges,
 };
 use git2::{
     BranchType, Delta, Diff, DiffFindOptions, DiffFormat, DiffOptions, ErrorCode, ObjectType, Oid,
@@ -107,6 +107,14 @@ impl RepositoryReader for GitRepositoryReader {
 
     fn tags(&self, repo: &RepositoryInfo) -> Result<Vec<Tag>, ReadError> {
         let git = open(repo)?;
+        let configured = git.remotes().map_err(map::error)?;
+        let mut seen = remote_tags::load(&git);
+        // A removed remote's record no longer applies.
+        seen.retain(|remote, _| {
+            configured
+                .iter_bytes()
+                .any(|name| name == remote.as_bytes())
+        });
         let mut tags = Vec::new();
         for reference in git.references_glob("refs/tags/*").map_err(map::error)? {
             let reference = reference.map_err(map::error)?;
@@ -114,9 +122,22 @@ impl RepositoryReader for GitRepositoryReader {
             let Ok(commit) = reference.peel_to_commit() else {
                 continue;
             };
+            let name = map::text(reference.shorthand_bytes());
+            let remotes = seen
+                .iter()
+                .map(|(remote, remote_tags)| RemoteTag {
+                    remote: remote.clone(),
+                    presence: match remote_tags.get(&name) {
+                        None => TagPresence::Missing,
+                        Some(oid) if Some(*oid) == reference.target() => TagPresence::Same,
+                        Some(_) => TagPresence::Different,
+                    },
+                })
+                .collect();
             tags.push(Tag {
-                name: map::text(reference.shorthand_bytes()),
+                name,
                 target: map::commit_id(commit.id()),
+                remotes,
             });
         }
         Ok(tags)

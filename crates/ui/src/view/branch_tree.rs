@@ -1,7 +1,7 @@
 //! The branch tree of the left column, flattened into rows.
 
 use application::RepositoryRefs;
-use domain::{Branch, BranchKind, CommitId, Stash, WebLink, web_link};
+use domain::{Branch, BranchKind, CommitId, RemoteTag, Stash, TagPresence, WebLink, web_link};
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +27,8 @@ pub struct BranchItem {
 pub struct TagItem {
     pub name: String,
     pub target: CommitId,
+    /// Whether each remote has the tag, for the remotes seen so far.
+    pub remotes: Vec<RemoteTag>,
 }
 
 impl BranchItem {
@@ -41,6 +43,73 @@ impl TagItem {
     pub fn refname(&self) -> String {
         format!("refs/tags/{}", self.name)
     }
+
+    /// Whether `remote` has the tag; `None` until it was fetched from or
+    /// pushed to.
+    pub fn presence_on(&self, remote: &str) -> Option<TagPresence> {
+        self.remotes
+            .iter()
+            .find(|r| r.remote == remote)
+            .map(|r| r.presence)
+    }
+
+    /// What the tag row says about the configured `remotes`.
+    pub fn remote_status(&self, remotes: &[String]) -> TagRemoteStatus {
+        let presence: Vec<_> = remotes
+            .iter()
+            .map(|remote| (remote.as_str(), self.presence_on(remote)))
+            .collect();
+        let with = |wanted: TagPresence| -> Vec<&str> {
+            presence
+                .iter()
+                .filter(|(_, p)| *p == Some(wanted))
+                .map(|(remote, _)| *remote)
+                .collect()
+        };
+        let (same, different, missing) = (
+            with(TagPresence::Same),
+            with(TagPresence::Different),
+            with(TagPresence::Missing),
+        );
+        let note = if !different.is_empty() {
+            Some(format!("differs on {}", different.join(", ")))
+        } else if !missing.is_empty() && same.is_empty() {
+            Some("local only".to_owned())
+        } else if !missing.is_empty() {
+            Some(format!("not on {}", missing.join(", ")))
+        } else {
+            None
+        };
+        let details = presence
+            .iter()
+            .map(|(remote, p)| match p {
+                Some(TagPresence::Same) => format!("On {remote}"),
+                Some(TagPresence::Different) => {
+                    format!("{remote} has a different tag of this name")
+                }
+                Some(TagPresence::Missing) => format!("Not on {remote}"),
+                None => format!("Not known whether {remote} has it: fetch to find out"),
+            })
+            .collect();
+        TagRemoteStatus {
+            on_every_remote: same.len() == remotes.len(),
+            note,
+            details,
+        }
+    }
+}
+
+/// What a tag row shows about the remotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TagRemoteStatus {
+    /// Every configured remote has this very tag, which holds trivially
+    /// without remotes: there is nowhere to push it.
+    pub on_every_remote: bool,
+    /// A short note beside the name when some remote lacks the tag or has a
+    /// different one.
+    pub note: Option<String>,
+    /// One line per remote, for the tooltip.
+    pub details: Vec<String>,
 }
 
 /// The collapse key of the tags folder. It starts collapsed, as a project
@@ -159,6 +228,7 @@ pub fn branch_rows(refs: &RepositoryRefs, collapsed: &HashSet<String>) -> Vec<Br
                 kind: BranchRowKind::Tag(TagItem {
                     name: tag.name.clone(),
                     target: tag.target,
+                    remotes: tag.remotes.clone(),
                 }),
             }));
         }

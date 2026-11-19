@@ -1,5 +1,5 @@
 use application::{CheckoutTarget, FetchTarget, ForcePushPlan, IntegrationOutcome, OngoingState};
-use domain::{CommitId, OngoingOperation, Progress, Stash, web_link};
+use domain::{CommitId, OngoingOperation, Progress, RemoteTag, Stash, TagPresence, web_link};
 use ui::view::branch_tree::{BranchItem, TagItem, remote_key, remote_of_folder};
 use ui::view::operation::{
     Action, MenuEntry, branch_menu, can_continue, commit_menu, conflict_title, dirty_texts,
@@ -165,6 +165,7 @@ fn tags_branch_push_and_delete_per_remote() {
     let tag = TagItem {
         name: "v1".into(),
         target: tip(),
+        remotes: vec![],
     };
     let remotes = ["origin".to_owned(), "fork".to_owned()];
     let menu = tag_menu(&tag, &remotes);
@@ -192,6 +193,40 @@ fn tags_branch_push_and_delete_per_remote() {
     assert_eq!(running_label(&menu[4].action), "Deleting v1 from origin…");
     // Without remotes, a tag can only be branched from and deleted.
     assert_eq!(tag_menu(&tag, &[]).len(), 2);
+}
+
+#[test]
+fn tags_are_pushed_only_where_missing_and_deleted_only_where_present() {
+    let tag = TagItem {
+        name: "v1".into(),
+        target: tip(),
+        remotes: vec![
+            RemoteTag {
+                remote: "fork".into(),
+                presence: TagPresence::Missing,
+            },
+            RemoteTag {
+                remote: "origin".into(),
+                presence: TagPresence::Same,
+            },
+        ],
+    };
+    let remotes = ["origin".to_owned(), "fork".to_owned(), "new".to_owned()];
+    let labels: Vec<String> = tag_menu(&tag, &remotes)
+        .into_iter()
+        .map(|e| e.label)
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "Create branch from here…",
+            "Push v1 to fork",
+            "Push v1 to new",
+            "Delete v1",
+            "Delete v1 from origin…",
+            "Delete v1 from new…",
+        ]
+    );
 }
 
 #[test]

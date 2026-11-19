@@ -1,5 +1,5 @@
 use crate::credentials::{AllowedCredentials, Attempt, CredentialChain};
-use crate::map;
+use crate::{map, remote_tags};
 use application::{CredentialProvider, ProgressReporter, RemoteError, RemoteOperations};
 use domain::{CommitId, Progress, RepositoryInfo};
 use git2::{
@@ -42,7 +42,12 @@ impl RemoteOperations for GitRemoteOperations {
         let no_refspecs: &[&str] = &[];
         handle
             .fetch(no_refspecs, Some(&mut options), None)
-            .map_err(|err| remote_error(err, failure.take(), progress))
+            .map_err(|err| remote_error(err, failure.take(), progress))?;
+        if let Some(tags) = remote_tags::advertised(&handle) {
+            // Only for display; the fetch itself succeeded.
+            let _ = remote_tags::store(&git, remote, tags);
+        }
+        Ok(())
     }
 
     fn push(
@@ -227,7 +232,10 @@ fn push_refspec(
         });
         let mut options = PushOptions::new();
         options.remote_callbacks(callbacks);
-        match handle.push(&[refspec], Some(&mut options)) {
+        let result = handle.push(&[refspec], Some(&mut options));
+        let pushed = result.is_ok() && rejected.borrow().is_none();
+        record_tags_after_push(&git, &handle, remote, refspec, remote_ref, pushed);
+        match result {
             Ok(()) => rejected.borrow_mut().take().map_or(Ok(()), Err),
             // The negotiation refused the push and said why.
             Err(_) if rejected.borrow().is_some() => {
@@ -240,6 +248,31 @@ fn push_refspec(
             Err(err) => Err(remote_error(err, failure.take(), progress)),
         }
     }
+}
+
+/// Records the tags the remote advertised before the push, with the pushed
+/// tag added or the deleted one removed if the push went through. A tag
+/// push rejected because the remote has a different tag gets recorded too.
+fn record_tags_after_push(
+    git: &Repository,
+    handle: &Remote<'_>,
+    remote: &str,
+    refspec: &str,
+    remote_ref: &str,
+    pushed: bool,
+) {
+    let Some(mut tags) = remote_tags::advertised(handle) else {
+        return;
+    };
+    if pushed && let Some(name) = remote_tags::tag_name(remote_ref) {
+        if refspec.starts_with(':') {
+            tags.remove(name);
+        } else if let Ok(oid) = git.refname_to_id(remote_ref) {
+            tags.insert(name.to_owned(), oid);
+        }
+    }
+    // Only for display; the push itself is done either way.
+    let _ = remote_tags::store(git, remote, tags);
 }
 
 fn open(repo: &RepositoryInfo) -> Result<Repository, RemoteError> {

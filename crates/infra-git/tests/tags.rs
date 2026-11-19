@@ -4,10 +4,12 @@ mod common;
 
 use application::{
     CreateTag, CredentialProvider, DeleteTag, OperationError, ProgressReporter, PushTag,
-    RemoteError,
+    RemoteError, RemoteOperations, RepositoryReader,
 };
 use common::TestRepo;
-use domain::{CommitId, Credential, CredentialRequest, Progress, RepositoryInfo};
+use domain::{
+    CommitId, Credential, CredentialRequest, Progress, RemoteTag, RepositoryInfo, TagPresence,
+};
 use git2::ObjectType;
 use infra_git::{GitRemoteOperations, GitRepositoryReader, GitRepositoryWriter};
 use std::sync::Arc;
@@ -126,6 +128,89 @@ fn pushing_and_deleting_a_tag_on_the_remote() {
     assert!(repo.git().find_reference("refs/tags/v1").is_ok());
 }
 
+/// Whether each remote has the local tag `name`, as the reader sees it.
+fn remotes_of(repo: &TestRepo, name: &str) -> Vec<RemoteTag> {
+    GitRepositoryReader
+        .tags(&info(repo))
+        .unwrap()
+        .into_iter()
+        .find(|tag| tag.name == name)
+        .unwrap()
+        .remotes
+}
+
+fn on_origin(presence: TagPresence) -> Vec<RemoteTag> {
+    vec![RemoteTag {
+        remote: "origin".into(),
+        presence,
+    }]
+}
+
+#[test]
+fn whether_a_remote_has_a_tag_is_unknown_until_it_was_seen() {
+    let (repo, _remote) = with_remote();
+    let repo = repo.tag("v1");
+    assert_eq!(remotes_of(&repo, "v1"), []);
+}
+
+#[test]
+fn pushing_and_deleting_a_tag_records_whether_the_remote_has_it() {
+    let (repo, _remote) = with_remote();
+    let repo = repo.annotated_tag("v1");
+    push_tag()
+        .push(&info(&repo), "v1", "origin", &Silent, &Silent)
+        .unwrap();
+    assert_eq!(remotes_of(&repo, "v1"), on_origin(TagPresence::Same));
+
+    delete_tag()
+        .delete_remote(&info(&repo), "origin", "v1", &Silent, &Silent)
+        .unwrap();
+    assert_eq!(remotes_of(&repo, "v1"), on_origin(TagPresence::Missing));
+}
+
+#[test]
+fn fetching_records_which_tags_the_remote_has() {
+    let (repo, remote) = with_remote();
+    let repo = repo.tag("pushed").tag("different");
+    push_tag()
+        .push(&info(&repo), "pushed", "origin", &Silent, &Silent)
+        .unwrap();
+    // Someone else tags the same commit `different`, annotated.
+    {
+        let commit = remote.git().find_object(repo.head(), None).unwrap();
+        let signature = git2::Signature::now("Other", "other@example.com").unwrap();
+        remote
+            .git()
+            .tag("different", &commit, &signature, "theirs", false)
+            .unwrap();
+    }
+    let repo = repo.annotated_tag("local");
+
+    GitRemoteOperations
+        .fetch(&info(&repo), "origin", &Silent, &Silent)
+        .unwrap();
+
+    assert_eq!(remotes_of(&repo, "pushed"), on_origin(TagPresence::Same));
+    assert_eq!(remotes_of(&repo, "local"), on_origin(TagPresence::Missing));
+    assert_eq!(
+        remotes_of(&repo, "different"),
+        on_origin(TagPresence::Different)
+    );
+}
+
+#[test]
+fn a_removed_remote_no_longer_counts() {
+    let (repo, _remote) = with_remote();
+    let repo = repo.tag("v1");
+    GitRemoteOperations
+        .fetch(&info(&repo), "origin", &Silent, &Silent)
+        .unwrap();
+    assert_eq!(remotes_of(&repo, "v1"), on_origin(TagPresence::Missing));
+
+    repo.git().remote_delete("origin").unwrap();
+    assert_eq!(remotes_of(&repo, "v1"), []);
+}
+
 #[test]
 fn a_different_tag_of_the_same_name_on_the_remote_is_not_replaced() {
     let (repo, remote) = with_remote();
@@ -154,4 +239,5 @@ fn a_different_tag_of_the_same_name_on_the_remote_is_not_replaced() {
     );
     let on_remote = remote.git().find_reference("refs/tags/v1").unwrap();
     assert_eq!(on_remote.target(), Some(old));
+    assert_eq!(remotes_of(&repo, "v1"), on_origin(TagPresence::Different));
 }

@@ -67,6 +67,27 @@ pub struct Tag {
     pub name: String,
     /// The commit the tag points to (annotated tags are peeled).
     pub target: CommitId,
+    /// Whether each remote has the tag, as seen at the last fetch from or
+    /// push to it. Sorted by remote name; remotes not seen yet are left out.
+    pub remotes: Vec<RemoteTag>,
+}
+
+/// Whether a remote has a tag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TagPresence {
+    /// The remote has the same tag.
+    Same,
+    /// The remote has a different tag of that name.
+    Different,
+    /// The remote has no tag of that name.
+    Missing,
+}
+
+/// Whether the remote `remote` has a tag.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RemoteTag {
+    pub remote: String,
+    pub presence: TagPresence,
 }
 
 /// What HEAD points to.

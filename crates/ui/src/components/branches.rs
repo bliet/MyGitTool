@@ -166,10 +166,15 @@ fn TagRow(tag: TagItem, selected: bool, remotes: Vec<String>) -> Element {
     };
     let indent = folder_indent(1) + 12;
     let refname = tag.refname();
-    let title = format!(
-        "{}\nClick to show the tagged commit\nRight-click to push or delete",
-        tag.name
-    );
+    let status = tag.remote_status(&remotes);
+    let mut title = tag.name.clone();
+    for line in &status.details {
+        title.push('\n');
+        title.push_str(line);
+    }
+    title.push_str("\nClick to show the tagged commit\nRight-click to push or delete");
+    // Filled when every remote has the tag, hollow while one may lack it.
+    let marker = if status.on_every_remote { "◆" } else { "◇" };
     let target = tag.target;
     let menu = tag_menu(&tag, &remotes);
     rsx! {
@@ -189,8 +194,11 @@ fn TagRow(tag: TagItem, selected: bool, remotes: Vec<String>) -> Element {
                 session.select_and_reveal(target);
                 consume_context::<Operations>().open_menu(&event, menu.clone());
             },
-            span { class: "marker tag-marker", "◆" }
+            span { class: "marker tag-marker", "{marker}" }
             span { class: "label", "{tag.name}" }
+            if let Some(note) = status.note {
+                span { class: "tracking", "{note}" }
+            }
         }
     }
 }

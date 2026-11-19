@@ -31,10 +31,12 @@ fn reader() -> FakeReader {
             Tag {
                 name: "v2".into(),
                 target: id(2),
+                remotes: vec![],
             },
             Tag {
                 name: "v1".into(),
                 target: id(1),
+                remotes: vec![],
             },
         ],
         ..FakeReader::default()

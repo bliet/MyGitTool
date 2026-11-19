@@ -1,9 +1,11 @@
 use application::{RemoteBranches, RepositoryRefs};
-use domain::{Branch, BranchKind, CommitId, Head, Remote, Stash, Tag, Upstream};
+use domain::{
+    Branch, BranchKind, CommitId, Head, Remote, RemoteTag, Stash, Tag, TagPresence, Upstream,
+};
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use ui::view::branch_tree::{
-    BranchRowKind, TAGS_KEY, branch_rows, natural_cmp, remote_key, stash_summary,
+    BranchRowKind, TAGS_KEY, TagItem, branch_rows, natural_cmp, remote_key, stash_summary,
 };
 
 fn local(name: &str, is_head: bool, upstream: Option<Upstream>) -> Branch {
@@ -193,6 +195,7 @@ fn with_tags(names: &[&str]) -> application::RepositoryRefs {
         .map(|name| Tag {
             name: (*name).into(),
             target: CommitId::from_bytes([3; 20]),
+            remotes: vec![],
         })
         .collect();
     refs
@@ -299,4 +302,82 @@ fn stash_rows_show_the_description_and_the_branch() {
         )
     );
     assert_eq!(stash_summary("custom"), ("custom".to_owned(), None));
+}
+
+fn tag_on(remotes: &[(&str, TagPresence)]) -> TagItem {
+    TagItem {
+        name: "v1".into(),
+        target: CommitId::from_bytes([3; 20]),
+        remotes: remotes
+            .iter()
+            .map(|(remote, presence)| RemoteTag {
+                remote: (*remote).into(),
+                presence: *presence,
+            })
+            .collect(),
+    }
+}
+
+fn names(remotes: &[&str]) -> Vec<String> {
+    remotes.iter().map(|r| (*r).to_owned()).collect()
+}
+
+#[test]
+fn a_pushed_tag_needs_no_note() {
+    let status = tag_on(&[("origin", TagPresence::Same)]).remote_status(&names(&["origin"]));
+    assert!(status.on_every_remote);
+    assert_eq!(status.note, None);
+    assert_eq!(status.details, ["On origin"]);
+}
+
+#[test]
+fn a_tag_no_remote_has_is_local_only() {
+    let status = tag_on(&[("origin", TagPresence::Missing)]).remote_status(&names(&["origin"]));
+    assert!(!status.on_every_remote);
+    assert_eq!(status.note.as_deref(), Some("local only"));
+    assert_eq!(status.details, ["Not on origin"]);
+}
+
+#[test]
+fn a_tag_some_remotes_lack_names_them() {
+    let tag = tag_on(&[
+        ("fork", TagPresence::Missing),
+        ("origin", TagPresence::Same),
+    ]);
+    let status = tag.remote_status(&names(&["origin", "fork"]));
+    assert!(!status.on_every_remote);
+    assert_eq!(status.note.as_deref(), Some("not on fork"));
+}
+
+#[test]
+fn a_different_tag_on_a_remote_is_pointed_out() {
+    let tag = tag_on(&[
+        ("fork", TagPresence::Missing),
+        ("origin", TagPresence::Different),
+    ]);
+    let status = tag.remote_status(&names(&["origin", "fork"]));
+    assert_eq!(status.note.as_deref(), Some("differs on origin"));
+    assert_eq!(
+        status.details,
+        ["origin has a different tag of this name", "Not on fork"]
+    );
+}
+
+#[test]
+fn a_remote_not_seen_yet_is_unknown() {
+    let status = tag_on(&[]).remote_status(&names(&["origin"]));
+    assert!(!status.on_every_remote);
+    assert_eq!(status.note, None);
+    assert_eq!(
+        status.details,
+        ["Not known whether origin has it: fetch to find out"]
+    );
+}
+
+#[test]
+fn without_remotes_there_is_nothing_to_push_to() {
+    let status = tag_on(&[]).remote_status(&[]);
+    assert!(status.on_every_remote);
+    assert_eq!(status.note, None);
+    assert!(status.details.is_empty());
 }
